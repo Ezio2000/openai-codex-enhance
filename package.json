@@ -1,0 +1,29 @@
+{
+  "name": "openai-codex-enhance",
+  "version": "0.1.0",
+  "description": "OpenAI Codex web, image, and native macOS Computer Use tools for pi",
+  "type": "module",
+  "keywords": ["pi-package", "openai-codex", "web-search", "image-generation", "computer-use"],
+  "license": "MIT",
+  "files": ["index.ts", "src", "README.md", "docs", "LICENSE"],
+  "pi": { "extensions": ["./index.ts"] },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "tsx --test test/*/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "smoke": "tsx scripts/smoke.ts",
+    "smoke:computer": "tsx scripts/smoke-computer.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typebox": "1.3.7",
+    "typescript": "^5.9.0"
+  }
+}

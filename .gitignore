@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Local artifacts: generated images, smoke/probe runs, absolute local paths
+artifacts/
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# pi local state (auth.json lives here)
+.pi/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/
