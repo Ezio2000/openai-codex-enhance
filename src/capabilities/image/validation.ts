@@ -17,7 +17,7 @@ export function validateImageRequest(request: ImageRequest): void {
     if (request[key] !== undefined && request[key] !== IMAGE_FIXED[key]) throw new Error(`${key} is fixed to ${IMAGE_FIXED[key]}.`);
   }
   if (request.model !== undefined && !IMAGE_MODELS.includes(request.model)) throw new Error("Invalid image model.");
-  if (request.quality !== undefined && !["low", "medium", "high"].includes(request.quality)) throw new Error("Invalid image quality.");
+  if (request.quality !== undefined && !["auto", "low", "medium", "high"].includes(request.quality)) throw new Error("Invalid image quality.");
   if (request.moderation !== undefined && !["auto", "low"].includes(request.moderation)) throw new Error("Invalid image moderation.");
   if (request.background !== undefined && !["auto", "opaque", "transparent"].includes(request.background)) throw new Error("Invalid image background.");
   if (request.images !== undefined) {

@@ -12,7 +12,7 @@ Web/Image 直接 HTTP，无 OpenAI SDK；Computer Use 使用本机官方运行�
 | `images/generations` | 无参考图；固定参数来自 IMAGE_FIXED，默认值来自 IMAGE_DEFAULTS |
 | `images/edits` | 参考图通过 images: [{image_url}] 发送；本地文件转为 data URL |
 
-图片 quality（low/medium/high，默认 high）和 moderation（auto/low，默认 auto）开放给工具，显式值原样传递；其他固定图片参数不能覆盖。
+图片 quality（auto/low/medium/high，默认 auto）和 moderation（auto/low，默认 auto）开放给工具，显式值原样传递；其他固定图片参数不能覆盖。
 
 搜索内部补 `allowed_callers: [direct]`、体育 `tool: sports` 和地点 `type: approximate`。timeout_seconds、include_context 只在工具层处理，不作为 wire 字段发送。图片工具不读取会话上下文图片，参考图只能显式通过 images 传入。
 

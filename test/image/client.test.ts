@@ -19,7 +19,7 @@ test("image edit sends fixed defaults and URL references without SDK translation
 test("generation has no images field and uses generations route", async () => {
   await new ImageClient(auth, async (url, init) => {
     assert.match(String(url), /images\/generations$/);
-    assert.deepEqual(JSON.parse(String(init?.body)), { ...image, ...IMAGE_DEFAULTS, size: "auto", background: "auto" });
+    assert.deepEqual(JSON.parse(String(init?.body)), { ...IMAGE_DEFAULTS, ...image, size: "auto", background: "auto" });
     return json({ data: [{ b64_json: "aGVsbG8=" }] });
   }).images(image);
 });

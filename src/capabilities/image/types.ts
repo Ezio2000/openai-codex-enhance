@@ -3,7 +3,7 @@ export type ImageModel = typeof IMAGE_MODELS[number];
 export const IMAGE_FIXED = Object.freeze({
   n: 1, output_format: "png", stream: true, partial_images: 0,
 } as const);
-export const IMAGE_DEFAULTS = Object.freeze({ ...IMAGE_FIXED, model: "gpt-image-2", quality: "high", moderation: "auto" } as const);
+export const IMAGE_DEFAULTS = Object.freeze({ ...IMAGE_FIXED, model: "gpt-image-2.5-flare", quality: "auto", moderation: "auto" } as const);
 export interface ImageReference { image_url: string }
 export interface ImageRequest {
   model: ImageModel;
@@ -11,7 +11,7 @@ export interface ImageRequest {
   images?: ImageReference[];
   n?: 1;
   size?: string;
-  quality?: "low" | "medium" | "high";
+  quality?: "low" | "medium" | "high" | "auto";
   background?: "transparent" | "opaque" | "auto";
   output_format?: "png";
   moderation?: "auto" | "low";

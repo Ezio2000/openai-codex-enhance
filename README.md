@@ -76,16 +76,16 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 
 | 参数 | 用途 |
 |---|---|
-| `model` | 可选：gpt-image-2（默认）、gpt-image-2.5-sunburst、gpt-image-2.5-flare |
+| `model` | 可选：gpt-image-2.5-flare（默认）、gpt-image-2.5-sunburst、gpt-image-2 |
 | `prompt` | 必填；编辑时说明保留和改变的内容 |
 | `images` | 每项提供 `path` 或 `image_url`，最多 16 张；不传即纯生成 |
 | `size` | auto 或 WIDTHxHEIGHT，默认 auto |
 | `background` | auto / opaque / transparent，默认 auto |
-| `quality` | low / medium / high，默认 high |
+| `quality` | auto / low / medium / high，默认 auto |
 | `moderation` | auto / low，默认 auto；low 不代表关闭安全政策，后端效果未验证 |
 | `timeout_seconds` | 默认 240，范围 10–600 |
 
-内部固定：**1 张、PNG、stream=true、partial_images=0**。不要将这些固定项作为工具参数传入。模型可选，省略时仍使用 gpt-image-2。
+内部固定：**1 张、PNG、stream=true、partial_images=0**。不要将这些固定项作为工具参数传入。模型可选，省略时使用 gpt-image-2.5-flare。
 
 ```json
 {"model":"gpt-image-2.5-flare","prompt":"设计一个蓝色鲸鱼图标"}

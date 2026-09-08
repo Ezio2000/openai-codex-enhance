@@ -27,7 +27,7 @@ test("fixed image defaults cannot be overridden and removed fields fail before H
 });
 
 test("all quality/moderation combinations survive schema, adapter and HTTP for generation and edits", async () => {
-  for (const quality of ["low", "medium", "high"] as const) {
+  for (const quality of ["auto", "low", "medium", "high"] as const) {
     for (const moderation of ["auto", "low"] as const) {
       const args = { prompt: "test", quality, moderation };
       assert.ok(Value.Check(ImageSchema, args));

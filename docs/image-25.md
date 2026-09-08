@@ -1,6 +1,6 @@
 # GPT Image 2.5 model selection
 
-`codex_image.model` accepts `gpt-image-2` (unchanged default), `gpt-image-2.5-sunburst`, and `gpt-image-2.5-flare`. Explicit selections survive validation and HTTP serialization for generation and editing. Reload pi with `/reload` after updating the extension.
+`codex_image.model` accepts `gpt-image-2.5-flare` (default), `gpt-image-2.5-sunburst`, and `gpt-image-2`. Explicit selections survive validation and HTTP serialization for generation and editing. Reload pi with `/reload` after updating the extension.
 
 ## Official documentation checked 2026-09-08
 
@@ -13,7 +13,7 @@
 
 ## Scope of this change
 
-Only model selection is added. Tool quality remains `low|medium|high` (default `high`), and PNG, one output, SSE, zero requested partials remain fixed. `xhigh|max|auto`, masks, compression, and input fidelity are not exposed. Follow-up Codex probes of `xhigh|max` did not honor the requested quality (see below). Public API documentation is not a guarantee of Codex endpoint compatibility.
+Model selection and the `auto` quality default are exposed; tool quality accepts `auto|low|medium|high` (default `auto`), and PNG, one output, SSE, zero requested partials remain fixed. `xhigh|max`, masks, compression, and input fidelity are not exposed. Follow-up Codex probes of `xhigh|max` did not honor the requested quality (see below). Public API documentation is not a guarantee of Codex endpoint compatibility.
 
 ## Live probe results
 

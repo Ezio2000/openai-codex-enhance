@@ -17,8 +17,8 @@ test("model selection survives schema, adapter and HTTP for generation and edits
         calls++;
         assert.ok(String(url).endsWith(edit ? "images/edits" : "images/generations"));
         const body = JSON.parse(String(init?.body));
-        assert.equal(body.model, model ?? "gpt-image-2");
-        assert.equal(body.quality, "high");
+        assert.equal(body.model, model ?? "gpt-image-2.5-flare");
+        assert.equal(body.quality, "auto");
         for (const [key, value] of Object.entries(IMAGE_FIXED)) assert.equal(body[key], value);
         return new Response(JSON.stringify({ data: [{ b64_json: "aGVsbG8=" }] }), { headers: { "content-type": "application/json" } });
       });
