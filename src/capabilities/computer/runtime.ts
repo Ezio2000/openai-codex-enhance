@@ -1,5 +1,8 @@
-import { access, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { constants } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -9,6 +12,73 @@ export interface Runtime {
   cwd: string;
   env: NodeJS.ProcessEnv;
   dispose(): Promise<void>;
+}
+
+// The signed Sky service lives in the app group container. A bridge-owned instance on a
+// private socket keeps it fully independent of any ChatGPT desktop process.
+const SKY_SOCKET_DIR = join(homedir(), "Library", "Group Containers", "2DC432GLL2.com.openai.sky.CUAService", "IPC");
+const SERVICE_START_TIMEOUT_MS = 10_000;
+const SERVICE_STOP_TIMEOUT_MS = 1_500;
+
+/** Resolve the signed Sky service executable; SKY_CUA_SERVICE_PATH may name its app bundle or binary. */
+export function serviceExecutable(codexHome: string): string {
+  const override = process.env.SKY_CUA_SERVICE_PATH;
+  if (override) {
+    if (!isAbsolute(override)) throw new Error("SKY_CUA_SERVICE_PATH must be an absolute path.");
+    return override.endsWith(".app") ? join(override, "Contents", "MacOS", "SkyComputerUseService") : override;
+  }
+  return join(codexHome, "computer-use", "Codex Computer Use.app", "Contents", "MacOS", "SkyComputerUseService");
+}
+
+/** Private socket name stays well under the macOS 104-byte sun_path limit. */
+export function privateSocketPath(): string {
+  return join(SKY_SOCKET_DIR, `pi-${randomBytes(4).toString("hex")}.sock`);
+}
+
+/** Minimal environment for the service: no pi credentials, loaders or safety flags. */
+function serviceEnvironment(codexHome: string, socket: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    HOME: homedir(), TMPDIR: tmpdir(), PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    LANG: process.env.LANG ?? "en_US.UTF-8", CODEX_HOME: codexHome,
+    SKY_CUA_SERVICE_NATIVE_PIPE_PATH: socket,
+  };
+  for (const key of ["USER", "LOGNAME", "__CF_USER_TEXT_ENCODING"]) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
+function listening(socket: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = connect(socket);
+    const done = (value: boolean) => { probe.destroy(); resolve(value); };
+    probe.once("connect", () => done(true));
+    probe.once("error", () => done(false));
+  });
+}
+
+async function awaitService(socket: string, child: ChildProcess, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Sky Computer Use service exited before it started listening (${child.signalCode ?? child.exitCode}).`);
+    if (await listening(socket)) return;
+    if (Date.now() >= deadline) throw new Error(`Sky Computer Use service did not start listening on ${socket} within ${timeoutMs} ms.`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function stopService(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGTERM");
+  const deadline = Date.now() + SERVICE_STOP_TIMEOUT_MS;
+  while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+}
+
+async function removeSocket(socket: string): Promise<void> {
+  await rm(socket, { force: true });
+  await rm(`${socket}.lock`, { force: true });
 }
 
 // User-configured application bundle only; never discover executables from the project.
@@ -23,23 +93,49 @@ export async function officialRuntime(): Promise<Runtime> {
   const codex = join(resources, "codex");
   const modules = join(root, "lib", "node_modules");
   const launcher = join(resources, "plugins", "openai-bundled", "plugins", "unified-computer-use", "scripts", "launch.mjs");
+  const codexHome = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  const service = serviceExecutable(codexHome);
   try {
-    await Promise.all([access(node, constants.X_OK), access(repl, constants.X_OK), access(codex, constants.X_OK), access(launcher), access(join(modules, "@oai", "sky")), access(join(modules, "@oai", "cua"))]);
+    await Promise.all([access(node, constants.X_OK), access(repl, constants.X_OK), access(codex, constants.X_OK), access(launcher), access(service, constants.X_OK), access(join(modules, "@oai", "sky")), access(join(modules, "@oai", "cua"))]);
   } catch {
     throw new Error(`Official Computer Use runtime not found in ${app}. Install a compatible ChatGPT desktop app; no runtime is downloaded automatically.`);
   }
-  const cwd = await mkdtemp(join(tmpdir(), "pi-codex-computer-"));
-  try { await symlink(modules, join(cwd, "node_modules"), "dir"); }
-  catch (error) { await rm(cwd, { recursive: true, force: true }); throw error; }
+  // Start a bridge-owned Sky service on a private socket before node_repl connects. The
+  // shipped @oai/sky client prefers SKY_CUA_SERVICE_NATIVE_PIPE_PATH, so it never touches a
+  // shared ChatGPT service, and this instance dies with the bridge-owned connection.
+  await mkdir(SKY_SOCKET_DIR, { recursive: true });
+  const socket = privateSocketPath();
+  const child = spawn(service, [], { env: serviceEnvironment(codexHome, socket), stdio: "ignore" });
+  let cwd: string | undefined;
+  try {
+    await awaitService(socket, child, SERVICE_START_TIMEOUT_MS);
+    cwd = await mkdtemp(join(tmpdir(), "pi-codex-computer-"));
+    await symlink(modules, join(cwd, "node_modules"), "dir");
+  } catch (error) {
+    await stopService(child); await removeSocket(socket);
+    if (cwd) await rm(cwd, { recursive: true, force: true });
+    throw error;
+  }
   // Do not forward OAuth credentials, NODE_OPTIONS, loader injection, or safety-override flags.
   const env: NodeJS.ProcessEnv = {
     HOME: homedir(), TMPDIR: tmpdir(), PATH: `${join(root, "bin")}:${resources}:/usr/bin:/bin:/usr/sbin:/sbin`,
     LANG: process.env.LANG ?? "en_US.UTF-8",
-    CODEX_HOME: process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+    CODEX_HOME: codexHome,
     CODEX_CLI_PATH: codex,
     CUA_REPL_NODE_REPL_PATH: repl, CUA_REPL_ENABLED_SURFACES: "computer",
     NODE_REPL_NODE_PATH: node, NODE_REPL_NODE_MODULE_DIRS: modules,
     NODE_REPL_TRUSTED_CODE_PATHS: modules,
+    SKY_CUA_SERVICE_NATIVE_PIPE_PATH: socket,
   };
-  return { command: node, args: [launcher], cwd, env, dispose: () => rm(cwd, { recursive: true, force: true }) };
+  let disposed = false;
+  return {
+    command: node, args: [launcher], cwd, env,
+    dispose: async () => {
+      if (disposed) return;
+      disposed = true;
+      await stopService(child);
+      await removeSocket(socket);
+      await rm(cwd!, { recursive: true, force: true });
+    },
+  };
 }

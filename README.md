@@ -99,7 +99,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 
 ### `codex_computer` — 原生桌面操作
 
-复用本机 ChatGPT 安装包中的 **签名 node_repl + Sky 原生服务**，不是 Playwright，也不是额外启动一个 Codex agent。**跨渠道可用**（同 `codex_image`）：主模型可以是 pi 中任意 provider 的模型，运行时与审批策略均与主模型无关；Codex 模型针对 cua API 训练过，其他模型完全依赖工具说明与首调返回的官方 API 文档，动作质量可能下降。当前仅支持 macOS，要求安装带 `cua_node` 和 `unified-computer-use` 插件的 ChatGPT 桌面版本，并完成其辅助功能和屏幕录制授权。**无需打开 ChatGPT 聊天界面，但必须保留安装包和原生服务。无需 Codex 账号或 OAuth 登录**：控制链路不读取任何凭据（已用空/不存在的 `CODEX_HOME` 实测）；尚未在从未登录过 ChatGPT 桌面版的全新机器上验证。
+复用本机 ChatGPT 安装包中的 **签名 node_repl + Sky 原生服务**，不是 Playwright，也不是额外启动一个 Codex agent。**Sky 服务由本扩展自己拉起一个私有实例**（独立进程 + app group 容器内的私有 socket），完全不依赖 ChatGPT 主程序，也不会连接或复用 ChatGPT 正在跑的共享服务：即使 ChatGPT 桌面版同时运行，两边互不影响，任务结束只回收本扩展自己的实例。**跨渠道可用**（同 `codex_image`）：主模型可以是 pi 中任意 provider 的模型，运行时与审批策略均与主模型无关；Codex 模型针对 cua API 训练过，其他模型完全依赖工具说明与首调返回的官方 API 文档，动作质量可能下降。当前仅支持 macOS，要求安装带 `cua_node` 和 `unified-computer-use` 插件的 ChatGPT 桌面版本，并完成其辅助功能和屏幕录制授权。**无需打开 ChatGPT 聊天界面，但必须保留安装包和原生服务。无需 Codex 账号或 OAuth 登录**：控制链路不读取任何凭据（已用空/不存在的 `CODEX_HOME` 实测）；尚未在从未登录过 ChatGPT 桌面版的全新机器上验证。
 
 `/reload` 后可直接说“用 Computer Use 查看 Safari 当前页面”。首次调用只初始化并查看一个入口，随后遵循工具返回的官方 API 文档：
 
@@ -112,7 +112,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 ```
 
 - 一次任务完全结束前复用 MCP/JS 进程、变量与应用绑定；包括 pi 自动重试/压缩续跑，不再在底层 `agent_end` 处销毁状态。串行处理桌面操作，首次使用返回官方 API 和确认策略。
-- 在 `agent_settled`（pi 不再自动续跑）时调用官方 `turn_ended`，随后释放本扩展的运行时连接，作为鼠标浮层清理的兜底；**会话应用授权保留，JS 状态不保留**。先尝试 EOF 正常退出，再有界升级到 SIGTERM/SIGKILL，仅针对本扩展进程组。进程退出不等于已验证屏幕浮层消失。
+- 在 `agent_settled`（pi 不再自动续跑）时调用官方 `turn_ended`，随后释放本扩展的运行时连接并停止本扩展自己的 Sky 实例，虚拟光标随私有实例一起回收；**会话应用授权保留，JS 状态不保留**。先尝试 EOF 正常退出，再有界升级到 SIGTERM/SIGKILL，仅针对本扩展自己的进程组和私有服务；不触碰 ChatGPT 或其他 Codex/Sky 进程。
 - 下一任务按需重新启动，工具结果与下一轮上下文提示重新初始化变量/app 绑定。运行时错误会标注 JS 状态不确定，不无差别重启、不自动重放动作；AX 索引过期与 JS 变量丢失分别处理。重载、会话/分支切换、切换 provider 时同时清空授权。
 - **默认 `auto-app`：普通应用访问自动批准，不再弹扩展的应用授权框**，与 pi 默认直接执行工具的使用方式一致；无 UI 时也可自动批准普通应用访问。这是扩展的默认策略，不是从 `defaultProjectTrust` / `isProjectTrusted()` 推断出的 YOLO 状态，也不会自动检测其他权限扩展。自动批准逐次记录诊断，不生成持久或可复用的手动授权。
 - 可用 `computer ask` 切回询问模式：**Deny / Allow once / Allow this app for this pi session**。会话允许仅缓存指定应用的普通访问，不缓存敏感操作；不修改 macOS 权限或 Codex 配置。`computer revoke` 同时切回 ask、撤销授权并停止运行时，避免撤销后马上又自动放行。`reset` 保留当前审批模式。
@@ -130,7 +130,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 
 也可以直接输入 `/openai-codex-enhance`，选中 **Computer Use**，按 Enter/Space 打开 `status / reset / revoke / ask / auto` 菜单；Enter 执行，Esc 返回。`/openai-codex-enhance computer` 定位到该入口。仅保留统一命令，不再注册独立的 `/codex-computer`。这些是会话操作，不会保存成全局设置；**新会话和 `/reload` 默认恢复 `auto-app`**，切换 provider/分支及正常任务结束保留当前审批模式。所有 provider 均可打开主面板、Computer 子菜单，以及执行直接命令。`computer status` 的 `lastCleanup` 记录清理原因、hook 结果、进程组退出/信号、工作目录清理结果和耗时；不记录页面或凭据。
 
-默认运行时位置 `/Applications/ChatGPT.app`。自定义安装位置需在启动 pi 前设置 `OPENAI_CODEX_COMPUTER_APP=/absolute/path/ChatGPT.app`。不自动下载、打包或复制官方程序，不绕过签名/系统权限，不向子进程转发 pi OAuth 令牌或安全关闭开关。升级 ChatGPT 后若不兼容会明确报错，不静默改走另一种控制方式。
+默认运行时位置 `/Applications/ChatGPT.app`，默认 Sky 服务位于 `$CODEX_HOME/computer-use/Codex Computer Use.app`（`CODEX_HOME` 默认 `~/.codex`）。自定义位置需在启动 pi 前设置 `OPENAI_CODEX_COMPUTER_APP=/absolute/path/ChatGPT.app` 和/或 `SKY_CUA_SERVICE_PATH=/absolute/path/Codex Computer Use.app`。不自动下载、打包或复制官方程序，不绕过签名/系统权限，不向子进程转发 pi OAuth 令牌或安全关闭开关。升级 ChatGPT 后若不兼容会明确报错，不静默改走另一种控制方式。
 
 详见 [Computer Use 接入与验证](docs/computer-use.md)。
 
@@ -169,6 +169,4 @@ npm run smoke -- --images # 另外生成、编辑各一次，消耗图片额度
 npm run smoke:computer -- --allow-calculator # 显式授权本次测试读计算器和截图，不点击
 ```
 
-真实探针须显式执行，产物位于不提交、不打包的 `artifacts/`。
-
-[协议设计](docs/protocol.md) · [能力实测](docs/capability-probes.md) · [Luna 对比](docs/search-model-comparison.md) · [Verbosity 实测](docs/verbosity-probe.md)
+[协议设计](docs/protocol.md) · [Computer Use 接入](docs/computer-use.md)

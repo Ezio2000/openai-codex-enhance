@@ -40,7 +40,7 @@ Codex 下通过公开 setFooter API 将设置放在 cwd 右侧，整行统一 th
 
 命令、补全、面板及 Computer 管理不按 provider 隐藏或拒绝。非 Codex 下设置保存为预设并提示 n/a；请求变换和自定义 Footer 仍仅适用于 Codex。shutdown 后停止补全和旧面板回调，不改 pi 内部注册表。
 
-Hook 使用写时复制，关闭时不覆盖原请求；没有后台请求、自动重试或静默参数降级。verbosity 已做 [Astra 对比实测](verbosity-probe.md)；original 和 priority 的实际效果仍不能仅凭参数被接受确认。original 不关闭图片预缩放。
+Hook 使用写时复制，关闭时不覆盖原请求；没有后台请求、自动重试或静默参数降级。original 和 priority 的实际效果仍不能仅凭参数被接受确认。original 不关闭图片预缩放。
 
 [官方 Fast 规则](https://learn.chatgpt.com/docs/agent-configuration/speed)：ChatGPT credits 的倍率是 GPT-5.4 2×、GPT-5.5/5.6/Astra 2.5×，与 API token 费率不同。显示倍率不是账单验证，也不会再次乘算 pi 已报告的 cost。
 
@@ -68,8 +68,8 @@ Hook 使用写时复制，关闭时不覆盖原请求；没有后台请求、自
 
 ## 依据
 
-Codex 对照版本 `ac192cd79`（2026-09-07）：`codex-rs/codex-api/src/{search,images}.rs` 及 `endpoint/` 定义请求；`codex-rs/ext/{web-search,image-generation}/src/` 展示调用方式。
+Codex 对照：`codex-rs/codex-api/src/{search,images}.rs` 及 `endpoint/` 定义请求；`codex-rs/ext/{web-search,image-generation}/src/` 展示调用方式。
 
 Fast 字段依据 `codex-rs/protocol/src/config_types.rs` 的 ServiceTier::Fast → priority；模型能力依据本地 models-manager/models.json。
 
-公开 [Images reference](https://developers.openai.com/api/reference/resources/images)、[图片指南](https://developers.openai.com/api/docs/guides/image-generation) 和 [Web search 指南](https://developers.openai.com/api/docs/guides/tools-web-search) 仅供参考，不代表 Codex 端点完整支持这些 API。实际观察见 [能力实测](capability-probes.md)。
+公开 [Images reference](https://developers.openai.com/api/reference/resources/images)、[图片指南](https://developers.openai.com/api/docs/guides/image-generation) 和 [Web search 指南](https://developers.openai.com/api/docs/guides/tools-web-search) 仅供参考，不代表 Codex 端点完整支持这些 API。

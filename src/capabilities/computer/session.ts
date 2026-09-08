@@ -112,8 +112,9 @@ export class ComputerSession {
         }
       } catch { hook = "error"; }
       finally {
-        // Hook success does not prove native cursor release. Disconnect only when pi
-        // settles, not at low-level agent_end (which can precede automatic retries).
+        // Hook success does not prove cursor release, but stopping the bridge-owned Sky
+        // service does. Disconnect only when pi settles, not at low-level agent_end
+        // (which can precede automatic retries).
         await this.releaseRuntime("agent_settled", hook, started);
       }
     });
