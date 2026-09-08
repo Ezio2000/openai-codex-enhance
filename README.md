@@ -77,8 +77,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 | 参数 | 用途 |
 |---|---|
 | `prompt` | 必填；编辑时说明保留和改变的内容 |
-| `images` | 每项提供 `path` 或 `image_url`，最多 16 张 |
-| `num_last_images_to_include` | 使用最近 1–16 张图，与 images 互斥 |
+| `images` | 每项提供 `path` 或 `image_url`，最多 16 张；不传即纯生成 |
 | `size` | auto 或 WIDTHxHEIGHT，默认 auto |
 | `background` | auto / opaque / transparent，默认 auto |
 | `quality` | low / medium / high，默认 high |

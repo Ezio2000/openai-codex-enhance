@@ -14,7 +14,7 @@ Web/Image 直接 HTTP，无 OpenAI SDK；Computer Use 使用本机官方运行�
 
 图片 quality（low/medium/high，默认 high）和 moderation（auto/low，默认 auto）开放给工具，显式值原样传递；其他固定图片参数不能覆盖。
 
-搜索内部补 `allowed_callers: [direct]`、体育 `tool: sports` 和地点 `type: approximate`。timeout_seconds、include_context、num_last_images_to_include 只在工具层处理，不作为 wire 字段发送。
+搜索内部补 `allowed_callers: [direct]`、体育 `tool: sports` 和地点 `type: approximate`。timeout_seconds、include_context 只在工具层处理，不作为 wire 字段发送。图片工具不读取会话上下文图片，参考图只能显式通过 images 传入。
 
 ## 原生 Computer Use
 
