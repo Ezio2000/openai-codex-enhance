@@ -76,6 +76,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 
 | 参数 | 用途 |
 |---|---|
+| `model` | 可选：gpt-image-2（默认）、gpt-image-2.5-sunburst、gpt-image-2.5-flare |
 | `prompt` | 必填；编辑时说明保留和改变的内容 |
 | `images` | 每项提供 `path` 或 `image_url`，最多 16 张；不传即纯生成 |
 | `size` | auto 或 WIDTHxHEIGHT，默认 auto |
@@ -84,7 +85,13 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 | `moderation` | auto / low，默认 auto；low 不代表关闭安全政策，后端效果未验证 |
 | `timeout_seconds` | 默认 240，范围 10–600 |
 
-内部固定：**gpt-image-2、1 张、PNG、stream=true、partial_images=0**。不要将这些固定项作为工具参数传入。
+内部固定：**1 张、PNG、stream=true、partial_images=0**。不要将这些固定项作为工具参数传入。模型可选，省略时仍使用 gpt-image-2。
+
+```json
+{"model":"gpt-image-2.5-flare","prompt":"设计一个蓝色鲸鱼图标"}
+```
+
+两款 2.5 模型名已在 Codex 后端完成单次生成实测，但响应没有实际模型标识，不能独立验证内部路由。Sunburst 侧重编辑精度，Flare 侧重日常生成速度。官方参数与本工具支持范围见 [GPT Image 2.5](docs/image-25.md)。
 
 ```json
 {"prompt":"设计一个蓝色鲸鱼图标，透明背景","background":"transparent"}

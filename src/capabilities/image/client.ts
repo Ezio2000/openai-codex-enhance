@@ -11,7 +11,7 @@ export class ImageClient {
 
   async images(request: ImageRequest, options: RequestOptions & { turnId?: string; onProgress?: ImageProgress } = {}) {
     validateImageRequest(request);
-    request = { ...request, ...IMAGE_DEFAULTS, size: request.size ?? "auto", background: request.background ?? "auto",
+    request = { ...request, ...IMAGE_DEFAULTS, model: request.model ?? IMAGE_DEFAULTS.model, size: request.size ?? "auto", background: request.background ?? "auto",
       quality: request.quality ?? IMAGE_DEFAULTS.quality, moderation: request.moderation ?? IMAGE_DEFAULTS.moderation };
     return this.http.post<ImageResponse>(request.images ? "images/edits" : "images/generations", request, {
       signal: options.signal, timeoutMs: options.timeoutMs ?? 240000,

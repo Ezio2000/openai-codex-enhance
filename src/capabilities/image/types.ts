@@ -1,10 +1,12 @@
+export const IMAGE_MODELS = ["gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare"] as const;
+export type ImageModel = typeof IMAGE_MODELS[number];
 export const IMAGE_FIXED = Object.freeze({
-  model: "gpt-image-2", n: 1, output_format: "png", stream: true, partial_images: 0,
+  n: 1, output_format: "png", stream: true, partial_images: 0,
 } as const);
-export const IMAGE_DEFAULTS = Object.freeze({ ...IMAGE_FIXED, quality: "high", moderation: "auto" } as const);
+export const IMAGE_DEFAULTS = Object.freeze({ ...IMAGE_FIXED, model: "gpt-image-2", quality: "high", moderation: "auto" } as const);
 export interface ImageReference { image_url: string }
 export interface ImageRequest {
-  model: "gpt-image-2";
+  model: ImageModel;
   prompt: string;
   images?: ImageReference[];
   n?: 1;

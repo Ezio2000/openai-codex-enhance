@@ -18,7 +18,7 @@ export interface ImageDependencies {
 
 export function imageWireOptions(args: ImageArgs): ImageRequest {
   return {
-    ...IMAGE_DEFAULTS, prompt: args.prompt,
+    ...IMAGE_DEFAULTS, model: args.model ?? IMAGE_DEFAULTS.model, prompt: args.prompt,
     size: args.size ?? "auto", background: args.background ?? "auto",
     quality: args.quality ?? IMAGE_DEFAULTS.quality, moderation: args.moderation ?? IMAGE_DEFAULTS.moderation,
   };
@@ -27,7 +27,7 @@ export function imageWireOptions(args: ImageArgs): ImageRequest {
 export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageSchema, Details> {
   return {
     name: "codex_image", label: "OpenAI Image",
-    description: "Generate or edit images with OpenAI GPT Image over the Codex HTTP endpoint. No images means generation; explicit images means editing. Conversation context images are never read, so every request is independent. Supports local paths, image URLs/data URLs, size, background, quality and moderation. Quality defaults to high and moderation to auto. Moderation low does not disable safety policies and its Codex backend effect is unverified. Fixed internally: gpt-image-2, one image, PNG, SSE with no requested partial images. These defaults are not tool arguments. Requested dimensions may not be honored; observable mismatches are reported. Input files must be PNG/JPEG/WebP under 50 MB each, at most 16 images and 100 MiB combined. Inspect local reference images with read before editing. Specify exactly one image source per item. Preserve unchanged details explicitly in the prompt. Generated originals are saved locally, with at most 4 small previews returned. Reuse original saved paths for later edits. Requests can take several minutes, consume image quota, and are never automatically retried.",
+    description: "Generate or edit images with OpenAI GPT Image over the Codex HTTP endpoint. No images means generation; explicit images means editing. Conversation context images are never read, so every request is independent. Supports local paths, image URLs/data URLs, size, background, quality and moderation. Quality defaults to high and moderation to auto. Moderation low does not disable safety policies and its Codex backend effect is unverified. Model is selectable: gpt-image-2 (default), gpt-image-2.5-sunburst (editing precision), or gpt-image-2.5-flare (fast everyday generation). Backend model routing is not independently verifiable. Fixed internally: one image, PNG, SSE with no requested partial images; these fixed fields are not tool arguments. Requested dimensions may not be honored; observable mismatches are reported. Input files must be PNG/JPEG/WebP under 50 MB each, at most 16 images and 100 MiB combined. Inspect local reference images with read before editing. Specify exactly one image source per item. Preserve unchanged details explicitly in the prompt. Generated originals are saved locally, with at most 4 small previews returned. Reuse original saved paths for later edits. Requests can take several minutes, consume image quota, and are never automatically retried.",
     promptSnippet: "Generate/edit images using OpenAI GPT Image, including reference images",
     promptGuidelines: ["Use codex_image for requested image generation or editing. Prefer saved original image paths for follow-up edits; do not claim an image was produced if the tool failed."],
     parameters: ImageSchema,
