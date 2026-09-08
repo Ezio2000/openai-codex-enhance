@@ -139,7 +139,7 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 - Web/Image 的认证由 pi 解析/刷新；令牌只发往 `https://chatgpt.com/backend-api/codex/`，拒绝重定向，不回退公开 API。
 - 搜索默认附带最近两条用户文本及中间有限助手正文，不含思考、系统提示、工具结果或文件内容。网页内容视为不可信数据。
 - 编辑会上传指定图片，请先检查参考图。本地输入限 PNG/JPEG/WebP，每张 <50 MB，合计 <=100 MiB。
-- 原图和截断正文私有保存于 `~/.pi/agent/artifacts/openai-codex-enhance/`，遵循 pi agent-dir 设置；不覆盖旧文件，预览缩放不影响原图。
+- 原图、截断正文和截图私有保存于 `~/.pi/agent/artifacts/openai-codex-enhance/{web,image,computer}/<sessionId>/call-XXXX/`（遵循 pi agent-dir 设置），按能力分目录、不覆盖旧文件，预览缩放不影响原图。
 - 图片请求不自动重试；超时/取消不保证远端计算停止。用量不等于订阅费用。
 
 ## 开发与文档

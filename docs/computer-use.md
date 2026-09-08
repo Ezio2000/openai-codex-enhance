@@ -66,7 +66,7 @@ Return text and screenshots directly to pi. Read the official documentation emit
 
 Text: 2000 lines / 48 KiB, with full truncated text saved. Images: at most four / 24 MiB; unsupported encodings and external resource blocks are not fetched. Sniff PNG/JPEG/WebP bytes instead of trusting the native MIME field (the tested runtime sometimes labels JPEG as PNG). Save original screenshot files mode 0600 under private per-call directories, return matching MIME to the model. Screenshots/AX text can contain private data: only inspect user-authorized apps/tasks.
 
-Artifact root: `getAgentDir()/artifacts/openai-codex-enhance/computer`. No automatic retention deletion is performed.
+Artifact root: `getAgentDir()/artifacts/openai-codex-enhance/computer/<sessionId>/call-XXXX/` (same `{web,image,computer}` layout as the other tools). No automatic retention deletion is performed.
 
 ## Validation
 

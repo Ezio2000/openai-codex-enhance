@@ -10,9 +10,9 @@ import { registerRequestControls } from "./shared/request-controls.ts";
 
 export default function openaiCodexEnhance(pi: ExtensionAPI): void {
   const root = join(getAgentDir(), "artifacts", "openai-codex-enhance");
-  registerWeb(pi, root);
-  registerImage(pi, root);
-  const computer = registerComputer(pi, root);
+  registerWeb(pi, join(root, "web"));
+  registerImage(pi, join(root, "image"));
+  const computer = registerComputer(pi, join(root, "computer"));
   registerRequestControls(pi, [verbosityControl, imageDetailControl, fastControl], undefined, [computer]);
   const tools = ["codex_web", "codex_image", "codex_computer"];
   // Web/image use stored Codex OAuth; computer uses the local official runtime.
