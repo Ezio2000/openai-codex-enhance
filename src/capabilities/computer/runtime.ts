@@ -35,10 +35,12 @@ export function privateSocketPath(): string {
   return join(SKY_SOCKET_DIR, `pi-${randomBytes(4).toString("hex")}.sock`);
 }
 
-/** Minimal environment for the service: no pi credentials, loaders or safety flags. */
-function serviceEnvironment(codexHome: string, socket: string): NodeJS.ProcessEnv {
+/** Minimal environment for the service: no pi credentials, loaders or safety flags.
+ * Resources leads PATH: the service resolves the packaged codex there and spawns its own
+ * codex app-server (auth status + computer-use policy) for every cua operation. */
+function serviceEnvironment(codexHome: string, socket: string, resources: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    HOME: homedir(), TMPDIR: tmpdir(), PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    HOME: homedir(), TMPDIR: tmpdir(), PATH: `${resources}:/usr/bin:/bin:/usr/sbin:/sbin`,
     LANG: process.env.LANG ?? "en_US.UTF-8", CODEX_HOME: codexHome,
     SKY_CUA_SERVICE_NATIVE_PIPE_PATH: socket,
   };
@@ -105,7 +107,7 @@ export async function officialRuntime(): Promise<Runtime> {
   // shared ChatGPT service, and this instance dies with the bridge-owned connection.
   await mkdir(SKY_SOCKET_DIR, { recursive: true });
   const socket = privateSocketPath();
-  const child = spawn(service, [], { env: serviceEnvironment(codexHome, socket), stdio: "ignore" });
+  const child = spawn(service, [], { env: serviceEnvironment(codexHome, socket, resources), stdio: "ignore" });
   let cwd: string | undefined;
   try {
     await awaitService(socket, child, SERVICE_START_TIMEOUT_MS);

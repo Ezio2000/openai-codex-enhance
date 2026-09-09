@@ -107,6 +107,15 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 
 复用本机 ChatGPT 安装包中的 **签名 node_repl + Sky 原生服务**，不是 Playwright，也不是额外启动一个 Codex agent。**Sky 服务由本扩展自己拉起一个私有实例**（独立进程 + app group 容器内的私有 socket），完全不依赖 ChatGPT 主程序，也不会连接或复用 ChatGPT 正在跑的共享服务：即使 ChatGPT 桌面版同时运行，两边互不影响，任务结束只回收本扩展自己的实例。**跨渠道可用**（同 `codex_image`）：主模型可以是 pi 中任意 provider 的模型，运行时与审批策略均与主模型无关；Codex 模型针对 cua API 训练过，其他模型完全依赖工具说明与首调返回的官方 API 文档，动作质量可能下降。当前仅支持 macOS，要求安装带 `cua_node` 和 `unified-computer-use` 插件的 ChatGPT 桌面版本，并完成其辅助功能和屏幕录制授权。**无需打开 ChatGPT 聊天界面，但必须保留安装包和原生服务。无需 Codex 账号或 OAuth 登录**：控制链路不读取任何凭据（已用空/不存在的 `CODEX_HOME` 实测）；尚未在从未登录过 ChatGPT 桌面版的全新机器上验证。
 
+首次初始化（一次性，之后 pi 中使用无需 ChatGPT 进程）：
+
+1. **安装 ChatGPT 桌面版**（带 `cua_node` 与 `unified-computer-use` 插件的版本）至 `/Applications/ChatGPT.app`。扩展仅把它当作磁盘文件使用（node、node_repl、`@oai` 模块、启动器、打包 `codex`），不启动其主程序。
+2. **在 ChatGPT 桌面版中启用一次 Computer Use**：首次配置会把签名 Sky 服务安装到 `$CODEX_HOME/computer-use/Codex Computer Use.app`，这是桥私有实例的二进制来源。
+3. **在系统弹窗中授权一次**辅助功能与屏幕录制：TCC 绑定 Sky 服务二进制本身，与 ChatGPT 是否运行无关。
+4. **登录一次**，产生 `~/.codex` 登录态。Sky 在每次 cua 操作前需经 `codex app-server` 查询登录态与 Computer Use 政策，该 app-server 由桥拉起的 Sky 实例从安装包内的 `codex` 自行 spawn、纯本地完成，不经任何 ChatGPT 进程。
+
+四项完成后，运行期依赖只剩磁盘上的安装包与 Sky 服务，ChatGPT 可保持完全退出。
+
 `/reload` 后可直接说“用 Computer Use 查看 Safari 当前页面”。首次调用只初始化并查看一个入口，随后遵循工具返回的官方 API 文档：
 
 ```json
