@@ -34,4 +34,5 @@ export interface ImageResponse {
   size?: string;
   usage?: Record<string, unknown>;
 }
-export type ImageProgress = (event: { index?: number; b64_json?: string; output_format?: string }) => void;
+export interface QuotaInfo { plan?: string; usedPercent?: number; resetAt?: number }
+export type ImageProgress = (event: { index?: number; b64_json?: string; output_format?: string; quota?: QuotaInfo }) => void;

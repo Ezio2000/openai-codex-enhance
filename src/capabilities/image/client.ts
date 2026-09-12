@@ -1,7 +1,20 @@
 import { HTTPTransport, ProtocolError, isRecord, readJSON, readSSE, responseError } from "../../shared/http.ts";
 import type { ResolveAuth, RequestOptions } from "../../shared/types.ts";
-import { IMAGE_DEFAULTS, IMAGE_TIMEOUT, type ImageProgress, type ImageRequest, type ImageResponse } from "./types.ts";
+import { IMAGE_DEFAULTS, IMAGE_TIMEOUT, type ImageProgress, type ImageRequest, type ImageResponse, type QuotaInfo } from "./types.ts";
 import { validateImageRequest } from "./validation.ts";
+
+// Codex rate-limit headers arrive with the response start, long before generation finishes.
+function parseQuotaHeaders(headers: Headers): QuotaInfo | undefined {
+  if (headers.get("x-codex-primary-used-percent") === null) return undefined;
+  const usedPercent = Number(headers.get("x-codex-primary-used-percent"));
+  const resetAfter = Number(headers.get("x-codex-primary-reset-after-seconds"));
+  const plan = headers.get("x-codex-plan-type");
+  return {
+    ...(plan ? { plan } : {}),
+    ...(Number.isFinite(usedPercent) ? { usedPercent } : {}),
+    ...(Number.isFinite(resetAfter) && resetAfter > 0 ? { resetAt: Date.now() + resetAfter * 1000 } : {}),
+  };
+}
 
 export class ImageClient {
   private readonly http: HTTPTransport;
@@ -13,10 +26,13 @@ export class ImageClient {
     validateImageRequest(request);
     request = { ...request, ...IMAGE_DEFAULTS, model: request.model ?? IMAGE_DEFAULTS.model, size: request.size ?? "auto", background: request.background ?? "auto",
       quality: request.quality ?? IMAGE_DEFAULTS.quality, moderation: request.moderation ?? IMAGE_DEFAULTS.moderation };
-    return this.http.post<ImageResponse>(request.images ? "images/edits" : "images/generations", request, {
+    let quota: QuotaInfo | undefined;
+    const result = await this.http.post<ImageResponse>(request.images ? "images/edits" : "images/generations", request, {
       signal: options.signal, timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT.defaultSeconds * 1000,
       headers: options.turnId ? { "x-codex-image-turn-id": options.turnId } : undefined,
       consume: async (response, signal, id, secrets) => {
+        quota = parseQuotaHeaders(response.headers);
+        if (quota) options.onProgress?.({ quota });
         if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) {
           const data = await readJSON(response, 128 * 1024 * 1024, signal);
           if (isRecord(data) && data.error) throw responseError(data, 200, id, secrets);
@@ -45,6 +61,7 @@ export class ImageClient {
         return completed;
       },
     });
+    return { ...result, quota };
   }
 }
 

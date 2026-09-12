@@ -3,7 +3,7 @@ import { Value } from "typebox/value";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { ImageArtifactStore, MAX_IMAGE_BYTES, MAX_TOTAL_INPUT_BYTES, resolveImage } from "./artifacts.ts";
 import { ImageClient } from "./client.ts";
-import { IMAGE_DEFAULTS, IMAGE_MAX_REFERENCES, IMAGE_TIMEOUT, type ImageRequest } from "./types.ts";
+import { IMAGE_DEFAULTS, IMAGE_MAX_REFERENCES, IMAGE_TIMEOUT, type ImageRequest, type QuotaInfo } from "./types.ts";
 import { validateImageRequest } from "./validation.ts";
 import { imageWarnings } from "./warnings.ts";
 import { ImageSchema, type ImageArgs } from "./schema.ts";
@@ -12,6 +12,30 @@ type Details = Record<string, unknown>;
 interface Preview { data: string; mimeType: string }
 // Cap on inline previews returned to the model; originals on disk are always the full set.
 const MAX_PREVIEWS = 4;
+const PROMPT_SNIPPET_LENGTH = 60;
+
+export function promptSnippetText(prompt: string): string {
+  const flat = prompt.replace(/\s+/g, " ").trim();
+  return flat.length > PROMPT_SNIPPET_LENGTH ? `${flat.slice(0, PROMPT_SNIPPET_LENGTH)}…` : flat;
+}
+export function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+}
+export function formatResetIn(resetAt: number, now = Date.now()): string {
+  const total = Math.max(0, Math.round((resetAt - now) / 1000));
+  const days = Math.floor(total / 86400), hours = Math.floor((total % 86400) / 3600), minutes = Math.floor((total % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+// Empty string when the backend did not send Codex quota headers; callers skip the line entirely.
+export function quotaLine(quota?: QuotaInfo, now?: number): string {
+  if (!quota || quota.usedPercent === undefined) return "";
+  const parts = [`quota ${quota.usedPercent}% used`];
+  if (quota.resetAt !== undefined) parts.push(`resets in ${formatResetIn(quota.resetAt, now)}`);
+  return parts.join(" · ");
+}
 export interface ImageDependencies {
   client(ctx: ExtensionContext): ImageClient;
   artifacts: ImageArtifactStore;
@@ -53,19 +77,46 @@ export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageS
       }
       const request: ImageRequest = { ...imageWireOptions(args), images: resolved.length ? resolved.map(image => image.reference) : undefined };
       validateImageRequest(request);
-      onUpdate?.({ content: [{ type: "text", text: `${request.images ? "Editing" : "Generating"} image(s) with ${request.model}…` }], details: { status: "in_progress" } });
-      const result = await deps.client(ctx).images(request, {
-        signal, timeoutMs: (args.timeout_seconds ?? IMAGE_TIMEOUT.defaultSeconds) * 1000, turnId: callId,
-        onProgress: progress => onUpdate?.({
-          content: [{ type: "text", text: `Received partial image${progress.index !== undefined ? ` ${progress.index + 1}` : ""}; waiting for the final image…` }],
-          details: { status: "in_progress", partialImageIndex: progress.index },
-        }),
-      });
+      const startedAt = Date.now();
+      const elapsedSeconds = () => (Date.now() - startedAt) / 1000;
+      let quota: QuotaInfo | undefined;
+      const statusText = () => [
+        `${request.images ? "Editing" : "Generating"} image(s) with ${request.model}…`,
+        `"${promptSnippetText(request.prompt)}"`,
+        [`⏱ ${formatElapsed(elapsedSeconds())}`, quotaLine(quota)].filter(Boolean).join(" · "),
+      ].join("\n");
+      const progressUpdate = () => ({ content: [{ type: "text" as const, text: statusText() }], details: { status: "in_progress", elapsedSeconds: elapsedSeconds(), ...(quota ? { quota } : {}) } });
+      onUpdate?.(progressUpdate());
+      // 1s ticker keeps the timer moving; quota appears once response headers arrive.
+      const ticker = setInterval(() => onUpdate?.(progressUpdate()), 1000);
+      let result: Awaited<ReturnType<ImageClient["images"]>>;
+      try {
+        result = await deps.client(ctx).images(request, {
+          signal, timeoutMs: (args.timeout_seconds ?? IMAGE_TIMEOUT.defaultSeconds) * 1000, turnId: callId,
+          onProgress: progress => {
+            if (progress.quota) { quota = progress.quota; return; }
+            onUpdate?.({
+              content: [{ type: "text", text: `Received partial image${progress.index !== undefined ? ` ${progress.index + 1}` : ""}; waiting for the final image…` }],
+              details: { status: "in_progress", partialImageIndex: progress.index },
+            });
+          },
+        });
+        if (result.quota) quota = result.quota;
+      } catch (error) {
+        if (error instanceof Error) {
+          const context = [`elapsed ${formatElapsed(elapsedSeconds())}`, quotaLine(quota)].filter(Boolean).join(" · ");
+          error.message += `\nPrompt: "${promptSnippetText(request.prompt)}" · ${context}`;
+        }
+        throw error;
+      } finally {
+        clearInterval(ticker);
+      }
       signal?.throwIfAborted();
       const images = await deps.artifacts.saveImages(ctx.sessionManager.getSessionId(), result.data.data, signal);
       const warnings = imageWarnings(request, result.data, images);
+      const summary = [`"${promptSnippetText(request.prompt)}"`, request.model, `elapsed ${elapsedSeconds().toFixed(1)}s`, quotaLine(quota)].filter(Boolean).join(" · ");
       const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[] = [{
-        type: "text", text: images.map((image, i) => `Image ${i + 1}: ${image.path}${image.width ? ` (${image.width}x${image.height})` : ""}`).join("\n") + "\nOriginal files are saved. Previews may be resized; use original paths for subsequent edits." + (warnings.length ? `\n\nBackend compatibility warnings:\n${warnings.map(warning => `- ${warning}`).join("\n")}` : ""),
+        type: "text", text: images.map((image, i) => `Image ${i + 1}: ${image.path}${image.width ? ` (${image.width}x${image.height})` : ""}`).join("\n") + `\n${summary}` + "\nOriginal files are saved. Previews may be resized; use original paths for subsequent edits." + (warnings.length ? `\n\nBackend compatibility warnings:\n${warnings.map(warning => `- ${warning}`).join("\n")}` : ""),
       }];
       if (deps.preview) {
         for (const image of images.slice(0, MAX_PREVIEWS)) {
@@ -81,7 +132,7 @@ export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageS
       }
       return {
         content,
-        details: { version: 1, status: "completed", model: request.model, operation: request.images ? "edit" : "generate", requestId: result.requestId, images, warnings,
+        details: { version: 1, status: "completed", model: request.model, operation: request.images ? "edit" : "generate", requestId: result.requestId, images, warnings, elapsedSeconds: elapsedSeconds(), ...(quota ? { quota } : {}),
           outputFormat: result.data.output_format, quality: result.data.quality, background: result.data.background, size: result.data.size, usage: result.data.usage },
       };
     },
