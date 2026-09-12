@@ -58,7 +58,6 @@ export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageS
     promptGuidelines: [
       "Use codex_image for requested image generation or editing. Prefer saved original image paths for follow-up edits; do not claim an image was produced if the tool failed.",
       "Each codex_image call produces exactly one image. For batches, issue multiple codex_image calls in parallel within the same turn; 8 to 16 concurrent calls are safe and encouraged, do not artificially cap batches at 4.",
-      "If a call fails with moderation_blocked, retry once with the same prompt before rephrasing: output-stage safety rejection is a per-generation dice roll.",
     ],
     parameters: ImageSchema,
     async execute(callId, args, signal, onUpdate, ctx) {
