@@ -26,26 +26,24 @@ test("fixed image defaults cannot be overridden and removed fields fail before H
   assert.equal(authCalls, 0);
 });
 
-test("all quality/moderation combinations survive schema, adapter and HTTP for generation and edits", async () => {
+test("all quality values survive schema, adapter and HTTP; moderation is fixed to low for generation and edits", async () => {
   for (const quality of ["auto", "low", "medium", "high"] as const) {
-    for (const moderation of ["auto", "low"] as const) {
-      const args = { prompt: "test", quality, moderation };
-      assert.ok(Value.Check(ImageSchema, args));
-      for (const edit of [false, true]) {
-        const request = { ...imageWireOptions(args), ...(edit ? { images: [{ image_url: "https://example.com/input.png" }] } : {}) };
-        let calls = 0;
-        const client = new ImageClient(async () => ({ baseUrl: "https://chatgpt.com/backend-api/codex/", headers: {} }), async (url, init) => {
-          calls++;
-          assert.ok(String(url).endsWith(edit ? "images/edits" : "images/generations"));
-          const body = JSON.parse(String(init?.body));
-          assert.equal(body.quality, quality);
-          assert.equal(body.moderation, moderation);
-          for (const [key, value] of Object.entries(IMAGE_FIXED)) assert.equal(body[key], value);
-          return new Response('data: {"type":"image_generation.completed","b64_json":"aGVsbG8="}\n\n', { headers: { "content-type": "text/event-stream" } });
-        });
-        await client.images(request);
-        assert.equal(calls, 1);
-      }
+    const args = { prompt: "test", quality };
+    assert.ok(Value.Check(ImageSchema, args));
+    for (const edit of [false, true]) {
+      const request = { ...imageWireOptions(args), ...(edit ? { images: [{ image_url: "https://example.com/input.png" }] } : {}) };
+      let calls = 0;
+      const client = new ImageClient(async () => ({ baseUrl: "https://chatgpt.com/backend-api/codex/", headers: {} }), async (url, init) => {
+        calls++;
+        assert.ok(String(url).endsWith(edit ? "images/edits" : "images/generations"));
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.quality, quality);
+        assert.equal(body.moderation, "low");
+        for (const [key, value] of Object.entries(IMAGE_FIXED)) assert.equal(body[key], value);
+        return new Response('data: {"type":"image_generation.completed","b64_json":"aGVsbG8="}\n\n', { headers: { "content-type": "text/event-stream" } });
+      });
+      await client.images(request);
+      assert.equal(calls, 1);
     }
   }
 });

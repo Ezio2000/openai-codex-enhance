@@ -15,12 +15,12 @@ test("image adapter sends image JSON, saves originals, returns previews and pers
     await writeFile(join(root, "source.png"), png());
     const tool = imageTool({ artifacts: new ImageArtifactStore(root), client: () => fakeImageClient((path, body) => {
       assert.match(path, /images\/edits$/); assert.match(body.images[0].image_url, /^data:image\/png/);
-      for (const [key, value] of Object.entries({ ...IMAGE_DEFAULTS, quality: "high", moderation: "low" })) assert.equal(body[key], value);
+      for (const [key, value] of Object.entries({ ...IMAGE_DEFAULTS, quality: "high" })) assert.equal(body[key], value);
       for (const key of ["mask", "output_compression", "input_fidelity", "user"]) assert.equal(key in body, false);
       assert.equal(body.images[0].path, undefined); assert.equal(body.timeout_seconds, undefined);
       return { data: [{ b64_json: png().toString("base64") }], output_format: "png", usage: { total_tokens: 10 } };
     }), preview: async () => ({ data: png().toString("base64"), mimeType: "image/png" }) });
-    const result = await tool.execute("call", { prompt: "Make blue", images: [{ path: "source.png" }], quality: "high", moderation: "low" }, undefined, undefined, ctx(root));
+    const result = await tool.execute("call", { prompt: "Make blue", images: [{ path: "source.png" }], quality: "high" }, undefined, undefined, ctx(root));
     assert.equal(result.content[1]?.type, "image");
     assert.equal(result.details!.operation, "edit");
     assert.deepEqual(result.details!.usage, { total_tokens: 10 });

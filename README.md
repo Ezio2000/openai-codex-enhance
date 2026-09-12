@@ -82,10 +82,9 @@ Codex 模式下使用自定义 Footer，状态紧跟当前工作目录右侧，�
 | `size` | auto 或 WIDTHxHEIGHT，默认 auto |
 | `background` | auto / opaque / transparent，默认 auto |
 | `quality` | auto / low / medium / high，默认 auto |
-| `moderation` | auto / low，默认 auto；low 不代表关闭安全政策，后端效果未验证 |
-| `timeout_seconds` | 默认 240，范围 10–600 |
+| `timeout_seconds` | 默认 300，范围 10–600 |
 
-内部固定：**1 张、PNG、stream=true、partial_images=0**。不要将这些固定项作为工具参数传入。模型可选，省略时使用 gpt-image-2.5-flare。
+内部固定：**1 张、PNG、stream=true、partial_images=0、moderation=low**（low 不代表关闭安全政策，后端效果未验证，不对工具开放）。不要将这些固定项作为工具参数传入。模型可选，省略时使用 gpt-image-2.5-flare。
 
 ```json
 {"model":"gpt-image-2.5-flare","prompt":"设计一个蓝色鲸鱼图标"}

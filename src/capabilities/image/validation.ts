@@ -1,4 +1,4 @@
-import { IMAGE_MODELS, IMAGE_FIXED, IMAGE_DEFAULTS, type ImageReference, type ImageRequest } from "./types.ts";
+import { IMAGE_MODELS, IMAGE_FIXED, IMAGE_DEFAULTS, IMAGE_MAX_REFERENCES, IMAGE_SIZE_RULES, type ImageReference, type ImageRequest } from "./types.ts";
 import { requireText, integer } from "../../shared/validation.ts";
 
 export function validateReference(ref: ImageReference): void {
@@ -21,15 +21,16 @@ export function validateImageRequest(request: ImageRequest): void {
   if (request.moderation !== undefined && !["auto", "low"].includes(request.moderation)) throw new Error("Invalid image moderation.");
   if (request.background !== undefined && !["auto", "opaque", "transparent"].includes(request.background)) throw new Error("Invalid image background.");
   if (request.images !== undefined) {
-    integer(request.images.length, "images count", 1, 16);
+    integer(request.images.length, "images count", 1, IMAGE_MAX_REFERENCES);
     for (const ref of request.images) validateReference(ref);
   }
   if (request.size && request.size !== "auto") {
     const match = /^(\d+)x(\d+)$/.exec(request.size);
     if (!match) throw new Error("size must be auto or WIDTHxHEIGHT.");
     const w = Number(match[1]), h = Number(match[2]), pixels = w * h;
-    if (w <= 0 || h <= 0 || w % 16 || h % 16 || Math.max(w, h) > 3840 || Math.max(w, h) / Math.min(w, h) > 3 || pixels < 655360 || pixels > 8294400) {
-      throw new Error("GPT Image size: edges must be multiples of 16 and <=3840, aspect ratio <=3:1, pixels 655360–8294400.");
+    const rules = IMAGE_SIZE_RULES;
+    if (w <= 0 || h <= 0 || w % rules.multiple || h % rules.multiple || Math.max(w, h) > rules.maxEdge || Math.max(w, h) / Math.min(w, h) > rules.maxAspect || pixels < rules.minPixels || pixels > rules.maxPixels) {
+      throw new Error(`GPT Image size: edges must be multiples of ${rules.multiple} and <=${rules.maxEdge}, aspect ratio <=${rules.maxAspect}:1, pixels ${rules.minPixels}–${rules.maxPixels}.`);
     }
   }
 }

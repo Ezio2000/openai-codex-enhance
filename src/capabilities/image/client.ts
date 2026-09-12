@@ -1,6 +1,6 @@
 import { HTTPTransport, ProtocolError, isRecord, readJSON, readSSE, responseError } from "../../shared/http.ts";
 import type { ResolveAuth, RequestOptions } from "../../shared/types.ts";
-import { IMAGE_DEFAULTS, type ImageProgress, type ImageRequest, type ImageResponse } from "./types.ts";
+import { IMAGE_DEFAULTS, IMAGE_TIMEOUT, type ImageProgress, type ImageRequest, type ImageResponse } from "./types.ts";
 import { validateImageRequest } from "./validation.ts";
 
 export class ImageClient {
@@ -14,7 +14,7 @@ export class ImageClient {
     request = { ...request, ...IMAGE_DEFAULTS, model: request.model ?? IMAGE_DEFAULTS.model, size: request.size ?? "auto", background: request.background ?? "auto",
       quality: request.quality ?? IMAGE_DEFAULTS.quality, moderation: request.moderation ?? IMAGE_DEFAULTS.moderation };
     return this.http.post<ImageResponse>(request.images ? "images/edits" : "images/generations", request, {
-      signal: options.signal, timeoutMs: options.timeoutMs ?? 240000,
+      signal: options.signal, timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT.defaultSeconds * 1000,
       headers: options.turnId ? { "x-codex-image-turn-id": options.turnId } : undefined,
       consume: async (response, signal, id, secrets) => {
         if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) {

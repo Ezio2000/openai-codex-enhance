@@ -1,15 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { Value } from "typebox/value";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { ImageArtifactStore, MAX_TOTAL_INPUT_BYTES, resolveImage } from "./artifacts.ts";
+import { ImageArtifactStore, MAX_IMAGE_BYTES, MAX_TOTAL_INPUT_BYTES, resolveImage } from "./artifacts.ts";
 import { ImageClient } from "./client.ts";
-import { IMAGE_DEFAULTS, type ImageRequest } from "./types.ts";
+import { IMAGE_DEFAULTS, IMAGE_MAX_REFERENCES, IMAGE_TIMEOUT, type ImageRequest } from "./types.ts";
 import { validateImageRequest } from "./validation.ts";
 import { imageWarnings } from "./warnings.ts";
 import { ImageSchema, type ImageArgs } from "./schema.ts";
 
 type Details = Record<string, unknown>;
 interface Preview { data: string; mimeType: string }
+// Cap on inline previews returned to the model; originals on disk are always the full set.
+const MAX_PREVIEWS = 4;
 export interface ImageDependencies {
   client(ctx: ExtensionContext): ImageClient;
   artifacts: ImageArtifactStore;
@@ -20,16 +22,20 @@ export function imageWireOptions(args: ImageArgs): ImageRequest {
   return {
     ...IMAGE_DEFAULTS, model: args.model ?? IMAGE_DEFAULTS.model, prompt: args.prompt,
     size: args.size ?? "auto", background: args.background ?? "auto",
-    quality: args.quality ?? IMAGE_DEFAULTS.quality, moderation: args.moderation ?? IMAGE_DEFAULTS.moderation,
+    quality: args.quality ?? IMAGE_DEFAULTS.quality, moderation: IMAGE_DEFAULTS.moderation,
   };
 }
 
 export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageSchema, Details> {
   return {
     name: "codex_image", label: "OpenAI Image",
-    description: "Generate or edit images with OpenAI GPT Image over the Codex HTTP endpoint. No images means generation; explicit images means editing. Conversation context images are never read, so every request is independent. Supports local paths, image URLs/data URLs, size, background, quality and moderation. Quality defaults to auto and moderation to auto. Moderation low does not disable safety policies and its Codex backend effect is unverified. Model is selectable: gpt-image-2.5-flare (default, fast everyday generation), gpt-image-2.5-sunburst (editing precision), or gpt-image-2. Backend model routing is not independently verifiable. Fixed internally: one image, PNG, SSE with no requested partial images; these fixed fields are not tool arguments. Requested dimensions may not be honored; observable mismatches are reported. Input files must be PNG/JPEG/WebP under 50 MB each, at most 16 images and 100 MiB combined. Inspect local reference images with read before editing. Specify exactly one image source per item. Preserve unchanged details explicitly in the prompt. Generated originals are saved locally, with at most 4 small previews returned. Reuse original saved paths for later edits. Requests can take several minutes, consume image quota, and are never automatically retried.",
+    description: `Generate or edit images with OpenAI GPT Image over the Codex HTTP endpoint. No images means generation; explicit images means editing. Conversation context images are never read, so every request is independent. Supports local paths, image URLs/data URLs, size, background and quality. Quality defaults to auto. Moderation is fixed internally to ${IMAGE_DEFAULTS.moderation} (requests less restrictive filtering, not disabled safety policies; backend effect is unverified) and is not a tool argument. Model is selectable: gpt-image-2.5-flare (default, fast everyday generation), gpt-image-2.5-sunburst (editing precision), or gpt-image-2. Backend model routing is not independently verifiable. Fixed internally: one image, PNG, SSE with no requested partial images; these fixed fields are not tool arguments. Requested dimensions may not be honored; observable mismatches are reported. Input files must be PNG/JPEG/WebP under ${(MAX_IMAGE_BYTES + 1) / 1_000_000} MB each, at most ${IMAGE_MAX_REFERENCES} images and ${MAX_TOTAL_INPUT_BYTES / (1024 * 1024)} MiB combined. Inspect local reference images with read before editing. Specify exactly one image source per item. Preserve unchanged details explicitly in the prompt. Generated originals are saved locally; small inline previews may be included alongside. Reuse original saved paths for later edits. Requests can take several minutes, consume image quota, and are never automatically retried.`,
     promptSnippet: "Generate/edit images using OpenAI GPT Image, including reference images",
-    promptGuidelines: ["Use codex_image for requested image generation or editing. Prefer saved original image paths for follow-up edits; do not claim an image was produced if the tool failed."],
+    promptGuidelines: [
+      "Use codex_image for requested image generation or editing. Prefer saved original image paths for follow-up edits; do not claim an image was produced if the tool failed.",
+      "Each codex_image call produces exactly one image. For batches, issue multiple codex_image calls in parallel within the same turn; 8 to 16 concurrent calls are safe and encouraged, do not artificially cap batches at 4.",
+      "If a call fails with moderation_blocked, retry once with the same prompt before rephrasing: output-stage safety rejection is a per-generation dice roll.",
+    ],
     parameters: ImageSchema,
     async execute(callId, args, signal, onUpdate, ctx) {
       signal?.throwIfAborted();
@@ -49,7 +55,7 @@ export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageS
       validateImageRequest(request);
       onUpdate?.({ content: [{ type: "text", text: `${request.images ? "Editing" : "Generating"} image(s) with ${request.model}…` }], details: { status: "in_progress" } });
       const result = await deps.client(ctx).images(request, {
-        signal, timeoutMs: (args.timeout_seconds ?? 240) * 1000, turnId: callId,
+        signal, timeoutMs: (args.timeout_seconds ?? IMAGE_TIMEOUT.defaultSeconds) * 1000, turnId: callId,
         onProgress: progress => onUpdate?.({
           content: [{ type: "text", text: `Received partial image${progress.index !== undefined ? ` ${progress.index + 1}` : ""}; waiting for the final image…` }],
           details: { status: "in_progress", partialImageIndex: progress.index },
@@ -62,7 +68,7 @@ export function imageTool(deps: ImageDependencies): ToolDefinition<typeof ImageS
         type: "text", text: images.map((image, i) => `Image ${i + 1}: ${image.path}${image.width ? ` (${image.width}x${image.height})` : ""}`).join("\n") + "\nOriginal files are saved. Previews may be resized; use original paths for subsequent edits." + (warnings.length ? `\n\nBackend compatibility warnings:\n${warnings.map(warning => `- ${warning}`).join("\n")}` : ""),
       }];
       if (deps.preview) {
-        for (const image of images.slice(0, 4)) {
+        for (const image of images.slice(0, MAX_PREVIEWS)) {
           signal?.throwIfAborted();
           try {
             const preview = await deps.preview(await readFile(image.path, { signal }), image.mimeType);
