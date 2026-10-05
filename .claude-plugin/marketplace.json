@@ -11,6 +11,11 @@
       "name": "cc-enhance",
       "source": "./",
       "description": "Image/video/voice generation, web search, PDF/video/image understanding and macOS computer use via your own OpenAI Codex, xAI, OpenCode Go, MiniMax and Z.ai subscriptions"
+    },
+    {
+      "name": "enhance-companion",
+      "source": "./mods/enhance-companion",
+      "description": "Companion mod for cc-enhance: connection status band above the prompt and a pane browsing generated artifacts"
     }
   ]
 }

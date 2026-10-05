@@ -1,0 +1,6 @@
+{
+  "name": "enhance-companion",
+  "version": "0.1.0",
+  "description": "cc-enhance connection status in the status line and a pane browsing generated artifacts",
+  "types": "./types/index.d.ts"
+}
