@@ -27,11 +27,15 @@ export class CapabilityRegistry {
   private readonly pending = new Map<string, number>();
   private readonly suspended = new Set<string>();
   private preferred: Readonly<Record<string, string>>;
+  private defaults: Readonly<Record<string, readonly string[]>> = {};
   constructor(preferred: Readonly<Record<string, string>> = {}) {
     this.preferred = { ...preferred };
   }
   setPreferred(preferred: Readonly<Record<string, string>>): void {
     this.preferred = { ...preferred };
+  }
+  setDefaults(defaults: Readonly<Record<string, readonly string[]>>): void {
+    this.defaults = Object.fromEntries(Object.entries(defaults).map(([key, ids]) => [key, [...ids]]));
   }
   list(): LoadedModule[] {
     return [...this.entries.values()];
@@ -184,7 +188,7 @@ export class CapabilityRegistry {
       name: capability,
       label: definition.label,
       description:
-        `Providers: ${providers.join(", ")}. Choose provider/service when several connections are available; a saved preference or a sole connection can be used implicitly. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}\n` +
+        `Providers: ${providers.join(", ")}. Omit provider/service to use a saved preference, configured default, or sole connection. Specify provider/service to override. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}\n` +
         implementations
           .map((e) => `[${e.module.manifest.provider}] ${e.instance.tool!.description}`)
           .join("\n"),
@@ -207,7 +211,14 @@ export class CapabilityRegistry {
           ? candidates.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === service)
           : candidates;
         // An explicit provider may override an unrelated saved preference; an explicit service never falls back.
-        const selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        let selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        if (selectable.length > 1 && !args.service && (!service || (args.provider && !matches.length))) {
+          const selected = this.defaults[capability]?.find((id) =>
+            selectable.some((e) => (e.binding?.id ?? e.module.manifest.provider) === id),
+          );
+          if (selected)
+            selectable = selectable.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === selected);
+        }
         if (selectable.length !== 1)
           throw new EnhanceError(
             "PROVIDER_SELECTION",

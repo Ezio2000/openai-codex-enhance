@@ -9,6 +9,7 @@ import {
   type ServiceSnapshot,
 } from "./contracts.ts";
 import { ModuleCatalog, type CatalogEntry } from "./catalog.ts";
+import { defaultServiceOrder } from "./defaults.ts";
 
 export interface CapabilityState {
   module: string;
@@ -94,16 +95,15 @@ export class ServiceRuntime {
           }
         }
         const registry = this.options.registry;
-        const preferred = { ...preferences.preferred };
-        // ChatGPT apps share Codex OAuth. Prefer its native source when both hosts are signed in.
-        for (const capability of ["space", "sites"]) {
-          if (preferred[capability]) continue;
-          const service = ["codex:openai-codex", "pi:openai-codex"].find((id) =>
-            wanted.has(`${capability}/openai@${id}`),
-          );
-          if (service) preferred[capability] = service;
-        }
-        registry.setPreferred(preferred);
+        const candidates = new Map<string, ServiceConnection[]>();
+        for (const { entry, connection } of wanted.values())
+          candidates.set(entry.capability, [...(candidates.get(entry.capability) ?? []), connection]);
+        registry.setDefaults(
+          Object.fromEntries(
+            [...candidates].map(([cap, connections]) => [cap, defaultServiceOrder(cap, connections)]),
+          ),
+        );
+        registry.setPreferred(preferences.preferred);
         for (const loaded of registry.list()) {
           if (wanted.has(loaded.id)) {
             registry.resume(loaded.id);

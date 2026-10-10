@@ -64,9 +64,22 @@ Pi 打开 `/pi-enhance` 面板；Claude Code 使用 `/cc-enhance`。两宿主共
 
 Claude Code 将前缀换为 `/cc-enhance`。`services` 列出连接；`status` 区分可用、缺少连接、已排除、宿主不支持、模型已支持该输入、加载失败和正在退出的调用。
 
-只有一个符合请求的连接时自动选择；多个连接时由 Agent 在参数中选择 `provider` 或精确 `service`，也可以保存偏好。同一供应商有多个连接时，仅指定 `provider` 仍不足以选择账号。显式连接不可用时直接报错，失败不会自动换连接重发。
+所有能力内置默认连接顺序，首次安装无需创建偏好文件。省略 `provider` / `service` 时先使用保存的偏好，否则按下表选择已发现且未排除的连接：
 
-`space` 和 `sites` 未保存偏好时，默认选择 OpenAI Codex OAuth：优先 `codex:openai-codex`，该连接未发现或已排除时使用 `pi:openai-codex`。显式 `service` 和保存的偏好优先；`prefer space auto` / `prefer sites auto` 恢复这一默认规则。调用失败不会切换连接重试。
+| 能力                     | 默认供应商顺序         | 首选连接                |
+| ------------------------ | ---------------------- | ----------------------- |
+| `gen_image`              | xAI → OpenAI → MiniMax | `pi:xai`                |
+| `gen_video`              | xAI                    | `pi:xai`                |
+| `gen_voice`              | MiniMax                | `pi:minimax-cn`         |
+| `search_web`             | OpenAI → ZAI           | `codex:openai-codex`    |
+| `space`、`sites`         | OpenAI                 | `codex:openai-codex`    |
+| `use_computer`           | 本地 OpenAI 运行时     | `local:chatgpt-desktop` |
+| `view_image`             | ZAI                    | `pi:zai`                |
+| `view_pdf`、`view_video` | OpenCode               | `pi:opencode-go`        |
+
+同一供应商优先采用表中的连接；OpenAI 其次用 `pi:openai-codex`，MiniMax 其次用 `pi:minimax`，ZAI 其次用 `pi:zai-coding-cn`，OpenCode 其次用 `opencode:opencode-go`。之后选择该供应商对应的环境变量连接，其余来源按连接 ID 稳定排序。先耗尽首选供应商的候选，再考虑下一供应商。
+
+显式 `service` 优先；仅指定 `provider` 时，在该供应商内使用适用的保存偏好或默认顺序。`prefer <能力> auto` 清除手动偏好并恢复内置规则。保存的偏好或显式连接不可用时直接报错。自动选择只发生在调用前，失败不会换连接重发。
 
 排除项可针对整个能力或一个能力的特定连接。排除立即阻止新调用，已有调用完成后释放实例。Pi 原生工具排除规则仍然有效。`view_image` 在主模型已经支持图片时隐藏；Claude Code 无法取得主模型信息，因此保持提供。
 

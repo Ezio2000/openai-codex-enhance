@@ -24,7 +24,7 @@ Unwanted bindings are suspended immediately, so existing tool handles cannot sta
 
 Preferences are host-scoped under `preferences/<host>.json`. Only preferred service IDs and exclusions are shared fields. Pi owns request settings and subagent settings. Atomic writes and locks protect concurrent writers. No project-level configuration is read.
 
-The service runtime supplies built-in OpenAI connection preferences for `space` and `sites` when no preference is saved: native `codex:openai-codex` first, then `pi:openai-codex` if the native connection is absent or excluded. Explicit selections and saved preferences retain priority. This selection policy runs before execution and never retries a failed call on another connection.
+The service runtime supplies ordered defaults for every capability without writing preference files. `services/src/defaults.ts` ranks providers per capability, then known source IDs within each provider, then remaining IDs deterministically. Images prefer xAI, OpenAI, then MiniMax; web search prefers OpenAI then ZAI. Other capabilities use their supported provider. OpenAI prefers native Codex OAuth; the other cloud providers prefer Pi connections. Excluded and unavailable bindings do not participate. Explicit selections and saved preferences retain priority, including errors for stale saved selections. This policy runs before execution and never retries a failed call on another connection.
 
 ## Core and parameter composition
 
@@ -32,7 +32,7 @@ Core owns module contracts, schema validation, explicit binding selection and li
 
 Each capability exports one definition with its identity, label, group and parameter-composition policy. Module identity is derived from that definition and provider. The execution contract is module API v2, and the bundled catalog format is v2; mismatched contracts are rejected. Images and web-search composition policies live in their capability directories, not Core. Provider-specific arguments are namespaced under `options.<provider>` and revalidated against the selected provider schema.
 
-Routing uses an explicit `service`, a `provider` narrowing the candidates, an applicable saved preference, or the sole candidate. Ambiguity is an error. An explicit provider can override an unrelated preference; an explicit service never falls back. Failed calls never retry on another connection. Tool schemas sort connections deterministically and expose only active bindings. Removed or suspended handles fail as stale.
+Routing uses an explicit `service`, a `provider` narrowing the candidates, an applicable saved preference, injected ordered defaults, or the sole candidate. Core does not choose provider priorities itself; standalone callers may inject defaults with `setDefaults`, and ambiguity without a matching default remains an error. An explicit provider can override an unrelated preference and use its own matching default; an explicit service never falls back. Failed calls never retry on another connection. Tool schemas sort connections deterministically and expose only active bindings. Removed or suspended handles fail as stale.
 
 Factories must be inert: no network or process startup. Instances own lifecycle and disposal. Core's request-control pipeline is generic; Pi defines its Codex-specific transformations and scope checks.
 

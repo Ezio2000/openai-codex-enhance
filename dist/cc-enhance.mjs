@@ -27015,11 +27015,15 @@ var CapabilityRegistry = class {
   pending = /* @__PURE__ */ new Map();
   suspended = /* @__PURE__ */ new Set();
   preferred;
+  defaults = {};
   constructor(preferred = {}) {
     this.preferred = { ...preferred };
   }
   setPreferred(preferred) {
     this.preferred = { ...preferred };
+  }
+  setDefaults(defaults) {
+    this.defaults = Object.fromEntries(Object.entries(defaults).map(([key, ids]) => [key, [...ids]]));
   }
   list() {
     return [...this.entries.values()];
@@ -27103,10 +27107,10 @@ var CapabilityRegistry = class {
   }
   merge(capability, entries) {
     const implementations = [...new Map(entries.map((e) => [e.module.manifest.provider, e])).values()];
-    const providers = implementations.map((e) => e.module.manifest.provider);
+    const providers2 = implementations.map((e) => e.module.manifest.provider);
     const definition = entries[0].module.definition;
     const first = entries[0].instance.tool;
-    const properties = { provider: typebox_exports.Optional(strings(providers)) };
+    const properties = { provider: typebox_exports.Optional(strings(providers2)) };
     if (entries.some((e) => e.binding))
       properties.service = typebox_exports.Optional(
         typebox_exports.Unsafe({
@@ -27153,7 +27157,7 @@ var CapabilityRegistry = class {
     return {
       name: capability,
       label: definition.label,
-      description: `Providers: ${providers.join(", ")}. Choose provider/service when several connections are available; a saved preference or a sole connection can be used implicitly. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}
+      description: `Providers: ${providers2.join(", ")}. Omit provider/service to use a saved preference, configured default, or sole connection. Specify provider/service to override. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}
 ` + implementations.map((e) => `[${e.module.manifest.provider}] ${e.instance.tool.description}`).join("\n"),
       promptSnippet: first.promptSnippet,
       promptGuidelines: [...new Set(entries.flatMap((e) => e.instance.tool.promptGuidelines ?? []))],
@@ -27171,7 +27175,14 @@ var CapabilityRegistry = class {
         );
         const service = args.service ?? this.preferred[capability];
         const matches = service ? candidates.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === service) : candidates;
-        const selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        let selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        if (selectable.length > 1 && !args.service && (!service || args.provider && !matches.length)) {
+          const selected = this.defaults[capability]?.find(
+            (id2) => selectable.some((e) => (e.binding?.id ?? e.module.manifest.provider) === id2)
+          );
+          if (selected)
+            selectable = selectable.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === selected);
+        }
         if (selectable.length !== 1)
           throw new EnhanceError(
             "PROVIDER_SELECTION",
@@ -27264,7 +27275,7 @@ var ModuleCatalog = class {
 // packages/integrations/services/src/contracts.ts
 async function discoverServices(sources) {
   const results = await Promise.allSettled(sources.map((source) => source.discover()));
-  const connections = /* @__PURE__ */ new Map();
+  const connections2 = /* @__PURE__ */ new Map();
   const errors = {};
   results.forEach((result, index) => {
     if (result.status === "rejected") {
@@ -27272,11 +27283,41 @@ async function discoverServices(sources) {
       return;
     }
     for (const connection2 of result.value) {
-      if (connections.has(connection2.id)) throw new Error(`Duplicate service connection: ${connection2.id}`);
-      connections.set(connection2.id, connection2);
+      if (connections2.has(connection2.id)) throw new Error(`Duplicate service connection: ${connection2.id}`);
+      connections2.set(connection2.id, connection2);
     }
   });
-  return { connections: [...connections.values()], errors };
+  return { connections: [...connections2.values()], errors };
+}
+
+// packages/integrations/services/src/defaults.ts
+var providers = {
+  gen_image: ["xai", "openai", "minimax"],
+  gen_video: ["xai"],
+  gen_voice: ["minimax"],
+  search_web: ["openai", "zai"],
+  space: ["openai"],
+  sites: ["openai"],
+  use_computer: ["openai"],
+  view_image: ["zai"],
+  view_pdf: ["opencode"],
+  view_video: ["opencode"]
+};
+var connections = {
+  openai: ["codex:openai-codex", "pi:openai-codex", "local:chatgpt-desktop"],
+  xai: ["pi:xai"],
+  minimax: ["pi:minimax-cn", "pi:minimax", "env:MINIMAX_CN_API_KEY", "env:MINIMAX_API_KEY"],
+  zai: ["pi:zai", "pi:zai-coding-cn", "env:ZAI_API_KEY", "env:ZAI_CODING_CN_API_KEY"],
+  opencode: ["pi:opencode-go", "opencode:opencode-go", "env:OPENCODE_API_KEY"]
+};
+var rank = (order, value) => {
+  const index = order.indexOf(value);
+  return index < 0 ? order.length : index;
+};
+function defaultServiceOrder(capability, candidates) {
+  return [...candidates].sort(
+    (a, b) => rank(providers[capability] ?? [], a.provider) - rank(providers[capability] ?? [], b.provider) || a.provider.localeCompare(b.provider) || rank(connections[a.provider] ?? [], a.id) - rank(connections[b.provider] ?? [], b.id) || a.id.localeCompare(b.id)
+  ).map((connection2) => connection2.id);
 }
 
 // packages/integrations/services/src/runtime.ts
@@ -27310,14 +27351,14 @@ var ServiceRuntime = class {
           states.push({ module: entry.id, status: "unsupported", reason: unsupported });
           continue;
         }
-        const connections = discovered.connections.filter(
+        const connections2 = discovered.connections.filter(
           (connection2) => connection2.provider === entry.provider && (entry.auth ? connection2.channel === entry.auth.channel && connection2.kind !== "runtime" && entry.auth.acceptedKinds.includes(connection2.kind) : connection2.kind === "runtime" && connection2.channel === entry.runtime)
         );
-        if (!connections.length) {
+        if (!connections2.length) {
           states.push({ module: entry.id, status: "missing", reason: "No matching service connection" });
           continue;
         }
-        for (const connection2 of connections) {
+        for (const connection2 of connections2) {
           const state = { module: entry.id, service: connection2.id, status: "available" };
           if (preferences.excluded.some(
             (key) => [entry.capability, entry.id, `${entry.capability}@${connection2.id}`].includes(key)
@@ -27331,15 +27372,15 @@ var ServiceRuntime = class {
         }
       }
       const registry2 = this.options.registry;
-      const preferred = { ...preferences.preferred };
-      for (const capability of ["space", "sites"]) {
-        if (preferred[capability]) continue;
-        const service = ["codex:openai-codex", "pi:openai-codex"].find(
-          (id) => wanted.has(`${capability}/openai@${id}`)
-        );
-        if (service) preferred[capability] = service;
-      }
-      registry2.setPreferred(preferred);
+      const candidates = /* @__PURE__ */ new Map();
+      for (const { entry, connection: connection2 } of wanted.values())
+        candidates.set(entry.capability, [...candidates.get(entry.capability) ?? [], connection2]);
+      registry2.setDefaults(
+        Object.fromEntries(
+          [...candidates].map(([cap, connections2]) => [cap, defaultServiceOrder(cap, connections2)])
+        )
+      );
+      registry2.setPreferred(preferences.preferred);
       for (const loaded of registry2.list()) {
         if (wanted.has(loaded.id)) {
           registry2.resume(loaded.id);
@@ -28209,16 +28250,16 @@ async function preview(bytes, mime) {
 }
 
 // packages/hosts/claude-code/src/display.ts
-function toolTitle(name, providers = [], label = name) {
-  return [label === name ? name : label + " " + name, providers.length ? "\xB7 " + providers.join("/") : ""].filter(Boolean).join(" ");
+function toolTitle(name, providers2 = [], label = name) {
+  return [label === name ? name : label + " " + name, providers2.length ? "\xB7 " + providers2.join("/") : ""].filter(Boolean).join(" ");
 }
 var FRONT = ["title", "prompt", "search_query", "text", "task", "path", "image", "images", "code"];
 var BACK = ["options", "provider", "service"];
 function orderSchema(schema) {
   const properties = schema.properties;
   if (!properties) return schema;
-  const rank = (key) => FRONT.includes(key) ? FRONT.indexOf(key) - FRONT.length : BACK.includes(key) ? 1 + BACK.indexOf(key) : 0;
-  const keys = Object.keys(properties).sort((a, b) => rank(a) - rank(b));
+  const rank2 = (key) => FRONT.includes(key) ? FRONT.indexOf(key) - FRONT.length : BACK.includes(key) ? 1 + BACK.indexOf(key) : 0;
+  const keys = Object.keys(properties).sort((a, b) => rank2(a) - rank2(b));
   return { ...schema, properties: Object.fromEntries(keys.map((key) => [key, properties[key]])) };
 }
 
@@ -28282,14 +28323,14 @@ async function serve(options) {
   let signature = "";
   let tools = [];
   const computer = () => registry2.list().find((e) => e.instance.manage);
-  const providers = (capability) => registry2.list().filter((e) => e.module.manifest.capability === capability).map((e) => e.module.manifest.provider).filter((provider, index, all) => all.indexOf(provider) === index);
+  const providers2 = (capability) => registry2.list().filter((e) => e.module.manifest.capability === capability).map((e) => e.module.manifest.provider).filter((provider, index, all) => all.indexOf(provider) === index);
   const listing = () => [
     ...tools.map((tool) => ({
       name: tool.name,
       description: describe2(tool),
       inputSchema: orderSchema(JSON.parse(JSON.stringify(tool.parameters))),
       annotations: {
-        title: toolTitle(tool.name, providers(tool.name), tool.label),
+        title: toolTitle(tool.name, providers2(tool.name), tool.label),
         readOnlyHint: !SERIAL_TOOLS.has(tool.name)
       }
     })),

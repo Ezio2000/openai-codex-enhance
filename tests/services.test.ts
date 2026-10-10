@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Type } from "typebox";
 import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileSources, sourcePaths } from "../packages/integrations/services/src/sources/files.ts";
+import { channels } from "../packages/integrations/services/src/sources/channels.ts";
 import {
   discoverServices,
   type ServiceConnection,
@@ -274,6 +276,134 @@ for (const module of [space, sites]) {
     }
   });
 }
+
+test("fresh installations route every capability without preferences, including provider overrides, without retrying failures", async () => {
+  const box = await sandbox();
+  const catalog: Catalog = JSON.parse(
+    await readFile(new URL("../dist/catalog.json", import.meta.url), "utf8"),
+  );
+  const modules = new ModuleCatalog(catalog, "/unused");
+  const calls: string[] = [];
+  let fail = false;
+  modules.load = async (id) => {
+    const entry = catalog.modules.find((m) => m.id === id)!;
+    return {
+      manifest: { ...entry, platforms: undefined },
+      definition: { id: entry.capability, label: entry.label, group: entry.group },
+      create: () => ({
+        tool: {
+          name: entry.capability,
+          label: entry.label,
+          description: "Routing fixture",
+          parameters: Type.Object({}),
+          execute: async () => {
+            calls.push(id);
+            if (fail) throw new Error("Provider failed");
+            return { content: [], details: {} };
+          },
+        },
+      }),
+    };
+  };
+  const credentials = new StaticCredentialResolver({});
+  let connections: ServiceConnection[] = Object.entries(channels).flatMap(([id, channel]) =>
+    [
+      `pi:${id}`,
+      `agent-enhance:${channel.provider}/${channel.channel}`,
+      ...(channel.env ? [`env:${channel.env}`] : []),
+    ].map((service) => ({ ...channel, id: service, source: "fixture", label: service, credentials })),
+  );
+  connections = [...new Map(connections.map((c) => [c.id, c])).values()];
+  connections.push(
+    {
+      ...channels["openai-codex"]!,
+      id: "codex:openai-codex",
+      source: "fixture",
+      label: "Codex",
+      credentials,
+    },
+    {
+      provider: "openai",
+      channel: "chatgpt-desktop",
+      kind: "runtime",
+      id: "local:chatgpt-desktop",
+      source: "fixture",
+      label: "Desktop",
+      credentials,
+    },
+  );
+  const source = { id: "fixture", discover: async () => connections };
+  const registry = new CapabilityRegistry();
+  const runtime = new ServiceRuntime({ modules, registry, services: () => ({ artifactRoot: box.root }) });
+  const conditions = {
+    features: new Set(catalog.modules.flatMap((m) => m.requires ?? [])),
+    platform: "darwin" as const,
+  };
+  const store = new PreferenceStore(box.home, "pi", emptyPiPreferences);
+  const call = (capability: string, args = {}) =>
+    registry
+      .tools()
+      .find((t) => t.name === capability)!
+      .execute("test", args, undefined, undefined, {
+        cwd: box.root,
+        sessionId: "test",
+        host: "test",
+        credentials,
+      });
+  const expected = {
+    gen_image: "pi:xai",
+    gen_video: "pi:xai",
+    gen_voice: "pi:minimax-cn",
+    search_web: "codex:openai-codex",
+    space: "codex:openai-codex",
+    sites: "codex:openai-codex",
+    use_computer: "local:chatgpt-desktop",
+    view_image: "pi:zai",
+    view_pdf: "pi:opencode-go",
+    view_video: "pi:opencode-go",
+  };
+  try {
+    assert.deepEqual(
+      [...new Set(catalog.modules.map((m) => m.capability))].sort(),
+      Object.keys(expected).sort(),
+    );
+    for (const host of ["pi", "claude-code"] as const) {
+      const prefs =
+        host === "pi" ? store.load() : new PreferenceStore(box.home, host, emptyPreferences).load();
+      connections.reverse();
+      await runtime.synchronize([source], prefs, conditions);
+      for (const [capability, service] of Object.entries(expected))
+        assert.equal((await call(capability)).details.service, service, `${host}: ${capability}`);
+    }
+    await assert.rejects(readFile(store.path), { code: "ENOENT" });
+    assert.equal((await call("gen_image", { provider: "openai" })).details.service, "codex:openai-codex");
+    assert.equal(
+      (await call("gen_image", { service: "pi:openai-codex" })).details.service,
+      "pi:openai-codex",
+    );
+    await runtime.synchronize(
+      [source],
+      { ...store.load(), preferred: { gen_image: "codex:openai-codex" } },
+      conditions,
+    );
+    assert.equal((await call("gen_image")).details.service, "codex:openai-codex");
+    assert.equal((await call("gen_image", { provider: "xai" })).details.service, "pi:xai");
+    await runtime.synchronize([source], { ...store.load(), preferred: { gen_image: "missing" } }, conditions);
+    await assert.rejects(call("gen_image"), /PROVIDER_SELECTION/);
+    await runtime.synchronize([source], { ...store.load(), excluded: ["gen_image@pi:xai"] }, conditions);
+    assert.equal((await call("gen_image")).details.service, "agent-enhance:xai/imagine");
+    connections = connections.filter((c) => c.provider !== "xai");
+    await runtime.synchronize([source], store.load(), conditions);
+    assert.equal((await call("gen_image")).details.service, "codex:openai-codex");
+    fail = true;
+    const before = calls.length;
+    await assert.rejects(call("gen_image"), /Provider failed/);
+    assert.equal(calls.length, before + 1);
+  } finally {
+    await runtime.dispose();
+    await box.cleanup();
+  }
+});
 
 test("runtime derives tools from services, treats failed discovery as unknown, and removes logged-out connections", async () => {
   const f = runtimeFixture(),

@@ -8471,11 +8471,15 @@ var CapabilityRegistry = class {
   pending = /* @__PURE__ */ new Map();
   suspended = /* @__PURE__ */ new Set();
   preferred;
+  defaults = {};
   constructor(preferred = {}) {
     this.preferred = { ...preferred };
   }
   setPreferred(preferred) {
     this.preferred = { ...preferred };
+  }
+  setDefaults(defaults) {
+    this.defaults = Object.fromEntries(Object.entries(defaults).map(([key, ids]) => [key, [...ids]]));
   }
   list() {
     return [...this.entries.values()];
@@ -8609,7 +8613,7 @@ var CapabilityRegistry = class {
     return {
       name: capability,
       label: definition.label,
-      description: `Providers: ${providers.join(", ")}. Choose provider/service when several connections are available; a saved preference or a sole connection can be used implicitly. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}
+      description: `Providers: ${providers.join(", ")}. Omit provider/service to use a saved preference, configured default, or sole connection. Specify provider/service to override. Failed calls never fall back.${definition.commonFields ? ` Provider-specific parameters go in options.<provider>.` : ""}
 ` + implementations.map((e) => `[${e.module.manifest.provider}] ${e.instance.tool.description}`).join("\n"),
       promptSnippet: first.promptSnippet,
       promptGuidelines: [...new Set(entries.flatMap((e) => e.instance.tool.promptGuidelines ?? []))],
@@ -8627,7 +8631,14 @@ var CapabilityRegistry = class {
         );
         const service = args.service ?? this.preferred[capability];
         const matches = service ? candidates.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === service) : candidates;
-        const selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        let selectable = !args.service && args.provider && !matches.length ? candidates : matches;
+        if (selectable.length > 1 && !args.service && (!service || args.provider && !matches.length)) {
+          const selected = this.defaults[capability]?.find(
+            (id2) => selectable.some((e) => (e.binding?.id ?? e.module.manifest.provider) === id2)
+          );
+          if (selected)
+            selectable = selectable.filter((e) => (e.binding?.id ?? e.module.manifest.provider) === selected);
+        }
         if (selectable.length !== 1)
           throw new EnhanceError(
             "PROVIDER_SELECTION",
