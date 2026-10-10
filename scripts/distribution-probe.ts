@@ -81,6 +81,8 @@ try {
     },
   });
   assert.equal(session.getAllTools().filter((t) => t.name === "gen_image").length, 1);
+  assert.ok(session.getActiveToolNames().includes("space"));
+  assert.ok(session.getActiveToolNames().includes("sites"));
   const image = session.getAllTools().find((t) => t.name === "gen_image")!;
   assert.deepEqual((image.parameters as any).properties.provider.enum, ["openai", "xai"]);
   await session.prompt("/pi-enhance services");

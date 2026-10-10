@@ -79,6 +79,8 @@ Claude Code 将前缀换为 `/cc-enhance`。`services` 列出连接；`status` �
 | `view_pdf` / `view_video` | opencode             | 本地 PDF / 视频理解                         |
 | `view_image`              | zai                  | 图片与视觉任务                              |
 | `use_computer`            | openai 本地运行时    | macOS 原生应用操作                          |
+| `space`                   | openai Codex OAuth   | 普通页面查找、读写、图片与附件上传          |
+| `sites`                   | openai Codex OAuth   | 站点详情、版本与部署状态查询                |
 
 同一能力的供应商合并为一个工具。公共字段位于顶层，专属字段位于 `options.<provider>`；合并规则由对应能力定义负责。
 
@@ -92,6 +94,19 @@ Claude Code 将前缀换为 `/cc-enhance`。`services` 列出连接；`status` �
 ```
 
 原始媒体保存在产物目录，预览不替代原件。生成请求不自动重试，超时不保证远端运算停止。
+
+### Space 与 Sites
+
+复用已有 Codex OAuth，直接调用 ChatGPT Apps MCP；不启动 Codex app-server。账号还需具有对应 App 的访问权限。`space` 与 `sites` 都用 `action: "list" | "get" | "call"`：`list` 查看当前账号支持的操作；`get` 搭配 `tool` 返回完整实时参数和说明；`call` 通过 `arguments` 执行。例如：
+
+```json
+{ "action": "get", "tool": "create_page" }
+{ "action": "call", "tool": "create_page", "arguments": { "title": "项目笔记", "initial_blocks": ["今天完成了第一版。"] } }
+```
+
+`space` 支持空间导航、普通页面查找/读取/创建/编辑、附件元信息与内容读取。编辑前读取页面，使用返回的块 ID 和 hash；写入后读回确认。`write_page_reference` 的 `arguments.file` 可传本地路径（相对工作目录解析）或已有上传对象，单文件最多 10 MiB。上传后用返回的引用或 Markdown 调用 `edit_page` 插入图片/附件；上传本身不修改页面正文。上传完成但附件挂载失败时，结果保留已上传对象供恢复，避免重复上传。
+
+`sites` 第一版仅开放 `list_sites`、`get_site`、`list_site_versions`、`get_site_version`、`get_deployment_status`。站点发布、原生表格/幻灯片/Canvas、定时任务和共享权限管理不在本版范围。两个模块保留原始结构数据和错误；写入失败或超时不自动重发，也不切换账号。
 
 ## Pi 请求设置与子代理
 

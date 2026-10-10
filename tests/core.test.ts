@@ -16,6 +16,7 @@ import { fastControl } from "../packages/hosts/pi/src/requests/fast.ts";
 import { verbosityControl } from "../packages/hosts/pi/src/requests/verbosity.ts";
 import { imageDetailControl } from "../packages/hosts/pi/src/requests/image-detail.ts";
 import { supportsModelOption } from "../packages/transports/openai/src/model-support.ts";
+import space from "../packages/capabilities/space/openai/src/index.ts";
 const context: ExecutionContext = {
   cwd: process.cwd(),
   sessionId: "test",
@@ -23,6 +24,42 @@ const context: ExecutionContext = {
   credentials: new StaticCredentialResolver({}),
 };
 const services = { artifactRoot: "/unused" };
+
+test("Space routing keeps nested arguments and MCP structure/error results intact", async () => {
+  const registry = new CapabilityRegistry();
+  const remote = {
+    content: [{ type: "text", text: "conflict" }],
+    details: { remoteResult: {} },
+    structuredContent: { error: { code: "conflict", block_id: "b" } },
+    isError: true,
+  };
+  let received: unknown;
+  registry.load(
+    fake(space, async (args) => {
+      received = args;
+      return remote;
+    }),
+    services,
+  );
+  const result = await registry.tools()[0]!.execute(
+    "c",
+    {
+      action: "call",
+      tool: "patch_page",
+      arguments: {
+        page_id: "page-1",
+        changes: [{ block_id: "b", expected_hash: "h", replacements: [{ old: "a", new: "b" }] }],
+      },
+    },
+    undefined,
+    undefined,
+    context,
+  );
+  assert.equal((received as any).arguments.changes[0].expected_hash, "h");
+  assert.deepEqual(result.structuredContent, remote.structuredContent);
+  assert.equal(result.isError, true);
+  await registry.dispose();
+});
 function fake(
   original: CapabilityModule,
   run: (args: any) => Promise<any> = async (args) => ({

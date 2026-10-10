@@ -4,14 +4,27 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// packages/capabilities/gen_image/minimax/src/manifest.ts
-var requirements = {
-  provider: "minimax",
-  auth: {
-    provider: "minimax",
-    channel: "token-plan",
-    acceptedKinds: ["api_key"]
-  }
+// packages/core/src/module.ts
+var MODULE_API_VERSION = 2;
+function defineModule(definition2, manifest, create) {
+  return {
+    definition: definition2,
+    manifest: {
+      ...manifest,
+      apiVersion: MODULE_API_VERSION,
+      id: `${definition2.id}/${manifest.provider}`,
+      capability: definition2.id
+    },
+    create
+  };
+}
+
+// packages/capabilities/sites/definition.ts
+var definition = {
+  id: "sites",
+  label: "Sites \u67E5\u8BE2",
+  group: "Content",
+  commonFields: ["action", "tool", "arguments", "timeout_seconds"]
 };
 
 // node_modules/typebox/build/system/memory/memory.mjs
@@ -3591,8 +3604,8 @@ function FromObject4(properties) {
 
 // node_modules/typebox/build/type/engine/object/from_tuple.mjs
 function FromTuple(types) {
-  const object2 = TupleToObject(Tuple(types));
-  const result = FromType8(object2);
+  const object = TupleToObject(Tuple(types));
+  const result = FromType8(object);
   return result;
 }
 
@@ -4601,432 +4614,6 @@ __export(typebox_exports, {
   Void: () => Void,
   With: () => With2
 });
-
-// packages/capabilities/gen_image/definition.ts
-var definition = {
-  id: "gen_image",
-  label: "\u56FE\u7247\u751F\u6210",
-  group: "Images",
-  commonFields: ["prompt", "images", "model", "timeout_seconds"],
-  composeParameters(schemas) {
-    return {
-      images: typebox_exports.Optional(
-        typebox_exports.Array(
-          typebox_exports.Object(
-            {
-              path: typebox_exports.Optional(typebox_exports.String({ minLength: 1 })),
-              image_url: typebox_exports.Optional(typebox_exports.String({ minLength: 1 }))
-            },
-            { additionalProperties: false }
-          ),
-          {
-            minItems: 1,
-            maxItems: Math.max(
-              ...schemas.map(
-                (s) => s.properties.images?.maxItems ?? 1
-              )
-            )
-          }
-        )
-      ),
-      model: typebox_exports.Optional(
-        typebox_exports.Unsafe({
-          type: "string",
-          enum: [
-            ...new Set(
-              schemas.flatMap((s) => s.properties.model?.enum ?? [])
-            )
-          ]
-        })
-      )
-    };
-  }
-};
-
-// packages/core/src/module.ts
-var MODULE_API_VERSION = 2;
-function defineModule(definition2, manifest, create) {
-  return {
-    definition: definition2,
-    manifest: {
-      ...manifest,
-      apiVersion: MODULE_API_VERSION,
-      id: `${definition2.id}/${manifest.provider}`,
-      capability: definition2.id
-    },
-    create
-  };
-}
-
-// packages/transports/minimax/src/http.ts
-var ProtocolError = class extends Error {
-  constructor(message, status, code, requestId) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.requestId = requestId;
-    this.name = "ProtocolError";
-  }
-};
-function redact(text2, secrets = []) {
-  let out = text2;
-  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
-    out = out.replaceAll(secret, "[REDACTED]");
-  }
-  return out.replace(/Bearer\s+[^\s"\\]+/gi, "Bearer [REDACTED]").replace(/sk-cp-[A-Za-z0-9_-]+/g, "sk-cp-[REDACTED]");
-}
-function credentialSecrets(auth) {
-  return Object.entries(auth?.headers ?? {}).filter(([key]) => /authorization|token|secret|api[-_]key/i.test(key)).map(([, value]) => value);
-}
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function responseError(value, status, requestId, secrets = []) {
-  const root = isRecord(value) ? value : {};
-  const error = isRecord(root.error) ? root.error : root;
-  const type = typeof error.type === "string" ? error.type.slice(0, 60) : void 0;
-  const detail = typeof error.message === "string" ? error.message : typeof root.error === "string" ? root.error : "Request rejected by the backend";
-  const hint = status === 401 ? " Reauthenticate MiniMax in the current host." : status === 402 ? " Account balance insufficient; top up MiniMax credits." : status === 429 ? " Rate limited; no automatic retry was made." : status === 400 || status === 422 ? " Check parameters and reference IDs." : "";
-  return new ProtocolError(
-    `MiniMax HTTP ${status}${type ? ` (${type})` : ""}: ${redact(detail, secrets).slice(0, 1200)}.${hint}${requestId ? ` Request ID: ${requestId}` : ""}`,
-    status,
-    type,
-    requestId
-  );
-}
-function businessError(payload, requestId, secrets = []) {
-  if (!isRecord(payload)) return void 0;
-  const base = isRecord(payload.base_resp) ? payload.base_resp : void 0;
-  const raw = base && typeof base.status_code === "number" ? base.status_code : 0;
-  if (raw === 0) return void 0;
-  const message = base && typeof base.status_msg === "string" && base.status_msg ? base.status_msg : "MiniMax reported a business error";
-  const hint = raw === 2067 ? " The Token Plan tier does not include this capability or its quota is exhausted; upgrade the plan or switch to credits." : raw === 2013 ? " Check parameters and reference IDs." : "";
-  return new ProtocolError(
-    `MiniMax base_resp ${raw}: ${redact(message, secrets).slice(0, 1200)}.${hint}${requestId ? ` Request ID: ${requestId}` : ""}`,
-    200,
-    String(raw),
-    requestId
-  );
-}
-var HTTPTransport = class {
-  constructor(resolveAuth, fetchImpl = fetch) {
-    this.resolveAuth = resolveAuth;
-    this.fetchImpl = fetchImpl;
-  }
-  async post(path, body, options) {
-    const controller = new AbortController();
-    const abort = () => controller.abort(options.signal?.reason);
-    if (options.signal?.aborted) abort();
-    else options.signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
-      options.timeoutMs
-    );
-    const signal = controller.signal;
-    let auth;
-    try {
-      signal.throwIfAborted();
-      auth = await this.resolveAuth();
-      signal.throwIfAborted();
-      const url = new URL(path, auth.baseUrl.replace(/\/?$/, "/"));
-      const headers = new Headers(auth.headers);
-      headers.set("Content-Type", "application/json");
-      headers.set("Accept", "application/json");
-      for (const [key, value] of Object.entries(options.headers ?? {})) headers.set(key, value);
-      const response = await this.fetchImpl(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal,
-        redirect: "error"
-      });
-      return await this.finish(response, options.consume, signal, auth);
-    } catch (error) {
-      throw this.wrap(error, signal, auth);
-    } finally {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
-    }
-  }
-  /** Quota endpoint is GET only; the documented POST example returns 404. */
-  async get(path, options) {
-    const controller = new AbortController();
-    const abort = () => controller.abort(options.signal?.reason);
-    if (options.signal?.aborted) abort();
-    else options.signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
-      options.timeoutMs
-    );
-    const signal = controller.signal;
-    let auth;
-    try {
-      signal.throwIfAborted();
-      auth = await this.resolveAuth();
-      signal.throwIfAborted();
-      const url = new URL(path, auth.baseUrl.replace(/\/?$/, "/"));
-      const headers = new Headers(auth.headers);
-      headers.set("Accept", "application/json");
-      const response = await this.fetchImpl(url, {
-        method: "GET",
-        headers,
-        signal,
-        redirect: "error"
-      });
-      return await this.finish(response, options.consume, signal, auth);
-    } catch (error) {
-      throw this.wrap(error, signal, auth);
-    } finally {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
-    }
-  }
-  async finish(response, consume, signal, auth) {
-    const secrets = credentialSecrets(auth);
-    const rawId = response.headers.get("minimax-request-id") ?? response.headers.get("x-request-id");
-    const requestId = rawId ? redact(rawId, secrets).slice(0, 200) : void 0;
-    if (!response.ok) {
-      let payload = {};
-      try {
-        payload = await response.json();
-      } catch {
-        payload = {};
-      }
-      signal.throwIfAborted();
-      throw responseError(payload, response.status, requestId, secrets);
-    }
-    const data = await consume(response, signal, requestId, secrets);
-    return { data, requestId };
-  }
-  wrap(error, signal, auth) {
-    if (signal.aborted)
-      return new ProtocolError(
-        signal.reason instanceof Error && /timed?/i.test(signal.reason.message) ? "Operation timed out; it was not retried." : "Operation cancelled; it was not retried."
-      );
-    if (error instanceof ProtocolError) return error;
-    return new ProtocolError(
-      `MiniMax request failed: ${redact(error instanceof Error ? error.message : String(error), credentialSecrets(auth)).slice(0, 800)}`
-    );
-  }
-};
-
-// packages/capabilities/gen_image/minimax/src/types.ts
-var IMAGE_MODELS = ["image-01"];
-var ASPECT_RATIOS = ["1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9"];
-var IMAGE_DEFAULTS = Object.freeze({
-  model: "image-01",
-  n: 1,
-  response_format: "base64"
-});
-var IMAGE_TIMEOUT = Object.freeze({ minSeconds: 10, defaultSeconds: 180, maxSeconds: 600 });
-var PROMPT_MAX_CHARS = 1500;
-
-// packages/transports/openai/src/validation.ts
-function requireText(value, name, max = 32e3) {
-  if (typeof value !== "string" || !value.trim() || value.length > max)
-    throw new Error(`${name} must be nonempty text of at most ${max} characters.`);
-}
-
-// packages/capabilities/gen_image/minimax/src/validation.ts
-function validateImageRequest(request) {
-  requireText(request.prompt, "prompt", 1500);
-  const allowed = /* @__PURE__ */ new Set([
-    "model",
-    "prompt",
-    "n",
-    "response_format",
-    "aspect_ratio",
-    "prompt_optimizer",
-    "seed"
-  ]);
-  for (const key of Object.keys(request))
-    if (!allowed.has(key)) throw new Error(`Unsupported image parameter: ${key}.`);
-  if (request.model !== void 0 && !IMAGE_MODELS.includes(request.model))
-    throw new Error("Invalid MiniMax image model.");
-  if (request.n !== void 0 && request.n !== 1) throw new Error("Exactly one image per call is fixed.");
-  if (request.response_format !== void 0 && request.response_format !== "base64")
-    throw new Error("response_format is fixed to base64 internally.");
-  if (request.aspect_ratio !== void 0 && !ASPECT_RATIOS.includes(request.aspect_ratio))
-    throw new Error(`aspect_ratio must be one of: ${ASPECT_RATIOS.join(", ")}.`);
-  if (request.seed !== void 0 && !Number.isSafeInteger(request.seed))
-    throw new Error("seed must be an integer.");
-}
-
-// packages/capabilities/gen_image/minimax/src/client.ts
-var ImageClient = class {
-  http;
-  constructor(resolveAuth, fetchImpl = fetch) {
-    this.http = new HTTPTransport(resolveAuth, fetchImpl);
-  }
-  async images(request, options = {}) {
-    validateImageRequest(request);
-    const body = {
-      ...IMAGE_DEFAULTS,
-      model: request.model ?? IMAGE_DEFAULTS.model,
-      prompt: request.prompt,
-      ...request.aspect_ratio === void 0 ? {} : { aspect_ratio: request.aspect_ratio },
-      ...request.prompt_optimizer === void 0 ? {} : { prompt_optimizer: request.prompt_optimizer },
-      ...request.seed === void 0 ? {} : { seed: request.seed }
-    };
-    const result = await this.http.post("image_generation", body, {
-      signal: options.signal,
-      timeoutMs: options.timeoutMs ?? IMAGE_TIMEOUT.defaultSeconds * 1e3,
-      consume: async (response, signal, requestId, secrets) => {
-        const payload = await response.json();
-        signal.throwIfAborted();
-        const failure = businessError(payload, requestId, secrets);
-        if (failure) throw failure;
-        const root = isRecord(payload) ? payload : {};
-        const data = isRecord(root.data) ? root.data : void 0;
-        const base64 = data && Array.isArray(data.image_base64) ? data.image_base64 : void 0;
-        if (!base64 || base64.length !== 1 || typeof base64[0] !== "string" || !base64[0])
-          throw new ProtocolError(
-            "MiniMax image response is missing data.image_base64; no image was generated."
-          );
-        const metadata = isRecord(root.metadata) ? root.metadata : void 0;
-        return {
-          imageBase64: [base64[0]],
-          metadata: {
-            ...typeof metadata?.success_count === "string" ? { success_count: metadata.success_count } : {},
-            ...typeof metadata?.failed_count === "string" ? { failed_count: metadata.failed_count } : {}
-          }
-        };
-      }
-    });
-    return result;
-  }
-};
-
-// packages/capabilities/gen_image/minimax/src/artifacts.ts
-import { open } from "node:fs/promises";
-import { join as join2 } from "node:path";
-
-// packages/transports/minimax/src/artifacts.ts
-import { mkdir, mkdtemp, realpath, lstat } from "node:fs/promises";
-import { join } from "node:path";
-var ArtifactDirectories = class {
-  constructor(root) {
-    this.root = root;
-  }
-  async directory(sessionId) {
-    const session = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120) || "ephemeral";
-    await mkdir(this.root, { recursive: true, mode: 448 });
-    const parent = await realpath(this.root);
-    const directory = join(parent, session);
-    await mkdir(directory, { mode: 448 }).catch((error) => {
-      if (error.code !== "EEXIST") throw error;
-    });
-    if (!(await lstat(directory)).isDirectory() || (await lstat(directory)).isSymbolicLink())
-      throw new Error("Artifact session directory must not be a symlink.");
-    return mkdtemp(join(directory, "call-"));
-  }
-};
-
-// packages/capabilities/gen_image/xai/src/image-info.ts
-function imageInfo(bytes) {
-  const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (b.length >= 33 && b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) && b.toString("ascii", 12, 16) === "IHDR") {
-    let alpha = b[25] === 4 || b[25] === 6;
-    for (let p = 8; p + 12 <= b.length; ) {
-      const size = b.readUInt32BE(p);
-      if (p + size + 12 > b.length) break;
-      if (b.toString("ascii", p + 4, p + 8) === "tRNS") alpha = true;
-      p += size + 12;
-    }
-    return {
-      mimeType: "image/png",
-      extension: "png",
-      width: b.readUInt32BE(16),
-      height: b.readUInt32BE(20),
-      alpha
-    };
-  }
-  if (b.length >= 4 && b[0] === 255 && b[1] === 216 && b[2] === 255) {
-    let p = 2;
-    while (p + 4 <= b.length) {
-      if (b[p++] !== 255) break;
-      while (b[p] === 255) p++;
-      const marker = b[p++];
-      if (marker === 218 || marker === 217) break;
-      if (marker === 1 || marker !== void 0 && marker >= 208 && marker <= 215) continue;
-      if (p + 2 > b.length) break;
-      const length = b.readUInt16BE(p);
-      if (length < 2 || p + length > b.length) break;
-      if (marker !== void 0 && [192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207].includes(marker) && length >= 7) {
-        return {
-          mimeType: "image/jpeg",
-          extension: "jpeg",
-          height: b.readUInt16BE(p + 3),
-          width: b.readUInt16BE(p + 5),
-          alpha: false
-        };
-      }
-      p += length;
-    }
-    return { mimeType: "image/jpeg", extension: "jpeg" };
-  }
-  if (b.length >= 16 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") {
-    const format = b.toString("ascii", 12, 16);
-    if (format === "VP8X" && b.length >= 30)
-      return {
-        mimeType: "image/webp",
-        extension: "webp",
-        width: b.readUIntLE(24, 3) + 1,
-        height: b.readUIntLE(27, 3) + 1,
-        alpha: Boolean(b[20] & 16)
-      };
-    if (format === "VP8L" && b.length >= 25 && b[20] === 47) {
-      const bits = b.readUInt32LE(21);
-      return {
-        mimeType: "image/webp",
-        extension: "webp",
-        width: (bits & 16383) + 1,
-        height: (bits >>> 14 & 16383) + 1,
-        alpha: Boolean(bits & 1 << 28)
-      };
-    }
-    if (format === "VP8 " && b.length >= 30 && b.subarray(23, 26).equals(Buffer.from([157, 1, 42])))
-      return {
-        mimeType: "image/webp",
-        extension: "webp",
-        width: b.readUInt16LE(26) & 16383,
-        height: b.readUInt16LE(28) & 16383,
-        alpha: false
-      };
-    return { mimeType: "image/webp", extension: "webp" };
-  }
-  throw new Error("Not a supported PNG, JPEG or WebP image (file content, not filename, is checked).");
-}
-
-// packages/capabilities/gen_image/minimax/src/artifacts.ts
-var ImageArtifactStore = class extends ArtifactDirectories {
-  async saveImage(sessionId, base64, signal) {
-    signal?.throwIfAborted();
-    if (!base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64))
-      throw new Error("Invalid base64 image returned by MiniMax.");
-    const bytes = Buffer.from(base64, "base64");
-    if (!bytes.length) throw new Error("MiniMax returned an empty image.");
-    const info = imageInfo(bytes);
-    const directory = await this.directory(sessionId);
-    const path = join2(directory, `image-1.${info.extension}`);
-    const file = await open(path, "wx", 384);
-    try {
-      await file.writeFile(bytes, { signal });
-    } finally {
-      await file.close();
-    }
-    return {
-      path,
-      mimeType: info.mimeType,
-      bytes: bytes.length,
-      width: info.width,
-      height: info.height
-    };
-  }
-};
-
-// packages/capabilities/gen_image/minimax/src/tool.ts
-import { readFile } from "node:fs/promises";
 
 // node_modules/typebox/build/schema/types/_refine.mjs
 function IsRefine2(value) {
@@ -8700,9 +8287,9 @@ function ScoreVariant(context, type, value) {
   }, 0);
 }
 function UnionScoreSelect(context, type, value) {
-  const schemas = type.anyOf.map((schema) => Deref(context, schema, value));
-  let [select, best] = [schemas[0], 0];
-  for (const schema of schemas) {
+  const schemas2 = type.anyOf.map((schema) => Deref(context, schema, value));
+  let [select, best] = [schemas2[0], 0];
+  for (const schema of schemas2) {
     const score = ScoreVariant(context, schema, value);
     if (score > best) {
       select = schema;
@@ -8797,156 +8384,146 @@ __export(value_exports, {
   Repair: () => Repair
 });
 
-// packages/core/src/errors.ts
-function annotateError(error, suffix) {
-  if (!(error instanceof Error)) return error;
+// packages/transports/openai/src/apps-tool.ts
+import { resolve } from "node:path";
+
+// packages/transports/openai/src/apps.ts
+import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
+import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+
+// packages/transports/openai/src/http.ts
+var ProtocolError = class extends Error {
+  constructor(message, status, code, requestId) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.requestId = requestId;
+    this.name = "ProtocolError";
+  }
+};
+function redact(text, secrets = []) {
+  const expanded = secrets.flatMap(
+    (secret) => /^Bearer\s+/i.test(secret) ? [secret, secret.replace(/^Bearer\s+/i, "")] : [secret]
+  );
+  for (const secret of expanded.filter(Boolean).sort((a, b) => b.length - a.length))
+    text = text.replaceAll(secret, "[REDACTED]");
+  return text.replace(/Bearer\s+[^\s"\\]+/gi, "Bearer [REDACTED]").replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, "[REDACTED JWT]").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+}
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function responseError(value, status, requestId, secrets = []) {
+  const root = isRecord(value) ? value : {};
+  const error = isRecord(root.error) ? root.error : root;
+  const code = typeof error.code === "string" ? redact(error.code, secrets).slice(0, 100) : void 0;
+  const detail = typeof error.message === "string" ? error.message : typeof root.error === "string" ? root.error : "Request rejected by the backend";
+  const hint = status === 401 ? " Log in again with /login openai-codex." : status === 403 ? " This account may not have access to this capability." : status === 429 ? " Quota or rate limit reached; no automatic retry was made." : status === 400 || status === 422 ? " Check parameters; public API fields may not be enabled on the Codex endpoint." : "";
+  return new ProtocolError(
+    `OpenAI HTTP ${status}${code ? ` (${code})` : ""}: ${redact(detail, secrets).slice(0, 1200)}.${hint}${requestId ? ` Request ID: ${requestId}` : ""}`,
+    status,
+    code,
+    requestId
+  );
+}
+async function* boundedChunks(response, maxBytes, signal) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (declaredLength > maxBytes) {
+    await response.body?.cancel();
+    throw new ProtocolError(`Response exceeds the ${maxBytes} byte safety limit.`);
+  }
+  if (!response.body) throw new ProtocolError("Backend returned an empty response body.");
+  const reader = response.body.getReader();
+  let total = 0;
+  let complete = false;
+  const abort = () => {
+    void reader.cancel().catch(() => {
+    });
+  };
+  signal?.addEventListener("abort", abort, { once: true });
   try {
-    error.message += suffix;
-    return error;
-  } catch {
-    const wrapped = new Error(`${error.message}${suffix}`, { cause: error });
-    wrapped.name = error.name;
-    const source = error;
-    const target = wrapped;
-    for (const key of ["code", "status", "statusCode", "retryable", "requestId"])
-      if (source[key] !== void 0) target[key] = source[key];
-    return wrapped;
+    while (true) {
+      signal?.throwIfAborted();
+      const { value, done } = await reader.read();
+      signal?.throwIfAborted();
+      if (done) {
+        complete = true;
+        break;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) throw new ProtocolError(`Response exceeds the ${maxBytes} byte safety limit.`);
+      yield value;
+    }
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    if (!complete) await reader.cancel().catch(() => {
+    });
+    reader.releaseLock();
   }
 }
-
-// packages/transports/minimax/src/schema.ts
-var object = (properties) => typebox_exports.Object(properties, { additionalProperties: false });
-var text = (description, maxLength = 4e3) => typebox_exports.String({ minLength: 1, maxLength, description });
-var choices = (values, description) => typebox_exports.Unsafe({ type: "string", enum: [...values], description });
-
-// packages/capabilities/gen_image/minimax/src/schema.ts
-var ImageSchema = object({
-  prompt: text(
-    `Detailed generation instructions, at most ${PROMPT_MAX_CHARS} characters. Editing/reference images are not supported by this provider.`,
-    PROMPT_MAX_CHARS
-  ),
-  model: typebox_exports.Optional(choices(IMAGE_MODELS, "Default image-01; the only verified Token Plan image model.")),
-  aspect_ratio: typebox_exports.Optional(
-    choices(ASPECT_RATIOS, "Output aspect ratio; default 1:1 (observed 1024x1024 JPEG).")
-  ),
-  prompt_optimizer: typebox_exports.Optional(
-    typebox_exports.Boolean({ description: "Let the backend rewrite the prompt before generating; default false." })
-  ),
-  seed: typebox_exports.Optional(
-    typebox_exports.Integer({ description: "Fixed seed for reproducible generations, if the backend honors it." })
-  ),
-  timeout_seconds: typebox_exports.Optional(
-    typebox_exports.Integer({
-      minimum: IMAGE_TIMEOUT.minSeconds,
-      maximum: IMAGE_TIMEOUT.maxSeconds,
-      description: `Default ${IMAGE_TIMEOUT.defaultSeconds}. Generation is never automatically retried.`
-    })
-  )
-});
-
-// packages/capabilities/gen_image/minimax/src/tool.ts
-var PROMPT_SNIPPET_LENGTH = 60;
-function promptSnippetText(prompt) {
-  const flat = prompt.replace(/\s+/g, " ").trim();
-  return flat.length > PROMPT_SNIPPET_LENGTH ? `${flat.slice(0, PROMPT_SNIPPET_LENGTH)}\u2026` : flat;
+async function readJSON(response, maxBytes, signal) {
+  const chunks = [];
+  for await (const chunk of boundedChunks(response, maxBytes, signal)) chunks.push(chunk);
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new ProtocolError("Backend returned invalid JSON (possibly an HTML login/proxy page).");
+  }
 }
-function formatElapsed(seconds) {
-  if (seconds < 60) return `${Math.floor(seconds)}s`;
-  return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
-}
-function imageWireOptions(args) {
-  return {
-    ...IMAGE_DEFAULTS,
-    model: args.model ?? IMAGE_DEFAULTS.model,
-    prompt: args.prompt,
-    ...args.aspect_ratio === void 0 ? {} : { aspect_ratio: args.aspect_ratio },
-    ...args.prompt_optimizer === void 0 ? {} : { prompt_optimizer: args.prompt_optimizer },
-    ...args.seed === void 0 ? {} : { seed: args.seed }
-  };
-}
-function imageTool(deps) {
-  return {
-    name: "gen_image",
-    label: "MiniMax Image",
-    description: `Generate one image with MiniMax image-01. Text-to-image only: it cannot edit, so passing images is an error. Options: aspect_ratio (default 1:1, 1024x1024), prompt_optimizer, seed. Output is usually JPEG and is saved locally. A separate server-side daily image allowance applies; exhausting it returns error 2067. Calls are not retried automatically.`,
-    promptSnippet: "Generate images with MiniMax image-01 via the Token Plan",
-    promptGuidelines: [
-      "Use gen_image for requested image generation or editing; do not claim an image was produced if the call failed."
-    ],
-    parameters: ImageSchema,
-    async execute(callId, args, signal, onUpdate, ctx) {
-      signal?.throwIfAborted();
-      if (!value_exports.Check(ImageSchema, args))
-        throw new Error("Invalid gen_image arguments; use the current tool schema.");
-      const request = imageWireOptions(args);
-      validateImageRequest(request);
-      const startedAt = Date.now();
-      const elapsedSeconds = () => (Date.now() - startedAt) / 1e3;
-      const statusText = () => [
-        `Generating image with ${request.model}\u2026`,
-        `"${promptSnippetText(request.prompt)}"`,
-        `\u23F1 ${formatElapsed(elapsedSeconds())}`
-      ].join("\n");
-      const progressUpdate = () => onUpdate?.({
-        content: [{ type: "text", text: statusText() }],
-        details: { status: "in_progress", elapsedSeconds: elapsedSeconds() }
-      });
-      progressUpdate();
-      const ticker = setInterval(progressUpdate, 1e3);
-      let result;
-      try {
-        result = await deps.client(ctx).images(request, {
-          signal,
-          timeoutMs: (args.timeout_seconds ?? IMAGE_TIMEOUT.defaultSeconds) * 1e3
-        });
-      } catch (error) {
-        throw annotateError(
-          error,
-          `
-Prompt: "${promptSnippetText(request.prompt)}" \xB7 elapsed ${formatElapsed(elapsedSeconds())}`
-        );
-      } finally {
-        clearInterval(ticker);
-      }
-      signal?.throwIfAborted();
-      const image = await deps.artifacts.saveImage(ctx.sessionId, result.data.imageBase64[0], signal);
-      const summary = [
-        `"${promptSnippetText(request.prompt)}"`,
-        request.model,
-        `elapsed ${elapsedSeconds().toFixed(1)}s`
-      ].filter(Boolean).join(" \xB7 ");
-      const content = [
-        {
-          type: "text",
-          text: `Image 1: ${image.path}${image.width ? ` (${image.width}x${image.height})` : ""}
-${summary}
-Original file is saved. Previews may be resized; use the original path for subsequent operations.`
-        }
-      ];
-      if (deps.preview) {
-        try {
-          const preview = await deps.preview(await readFile(image.path, { signal }), image.mimeType);
-          if (preview && Buffer.byteLength(preview.data, "base64") <= 512 * 1024)
-            content.push({ type: "image", ...preview });
-        } catch {
-          signal?.throwIfAborted();
-        }
-      }
-      return {
-        content,
-        details: {
-          version: 1,
-          status: "completed",
-          operation: "generate",
-          model: request.model,
-          images: [image],
-          elapsedSeconds: elapsedSeconds(),
-          requestId: result.requestId,
-          metadata: result.data.metadata
-        }
-      };
+async function* readSSE(response, maxBytes, signal) {
+  const decoder = new TextDecoder();
+  let pending = "";
+  let data = [];
+  let event;
+  function dispatch() {
+    const raw = data.join("\n");
+    const name = event;
+    data = [];
+    event = void 0;
+    if (!raw || raw === "[DONE]") return;
+    try {
+      return { event: name, data: JSON.parse(raw) };
+    } catch {
+      throw new ProtocolError("Backend returned malformed SSE JSON.");
     }
+  }
+  function line(raw) {
+    const value = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (value === "") return dispatch();
+    if (value.startsWith("data:")) data.push(value.slice(5).replace(/^ /, ""));
+    if (value.startsWith("event:")) event = value.slice(6).trim();
+  }
+  for await (const chunk of boundedChunks(response, maxBytes, signal)) {
+    pending += decoder.decode(chunk, { stream: true });
+    let end;
+    while ((end = pending.indexOf("\n")) >= 0) {
+      const item = line(pending.slice(0, end));
+      pending = pending.slice(end + 1);
+      if (item) yield item;
+    }
+  }
+  pending += decoder.decode();
+  if (pending) {
+    const item = line(pending);
+    if (item) yield item;
+  }
+  const final = dispatch();
+  if (final) yield final;
+}
+async function abortable(promise, signal) {
+  signal.throwIfAborted();
+  let abort = () => {
   };
+  const cancelled = new Promise((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, cancelled]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
 }
 
 // package.json
@@ -9014,6 +8591,176 @@ var package_default = {
 var clientInfo = { name: "agent-enhance", version: package_default.version };
 var userAgent = `${clientInfo.name}/${clientInfo.version}`;
 
+// packages/transports/openai/src/apps.ts
+var AppsClient = class {
+  constructor(resolveAuth, fetchImpl = fetch) {
+    this.resolveAuth = resolveAuth;
+    this.fetchImpl = fetchImpl;
+  }
+  id = 0;
+  session;
+  protocol;
+  auth;
+  async request(path, body, signal, mcp = false) {
+    signal.throwIfAborted();
+    const auth = await abortable(this.resolveAuth(), signal);
+    if (this.auth && new Headers(this.auth.headers).get("chatgpt-account-id") !== new Headers(auth.headers).get("chatgpt-account-id"))
+      throw new Error(
+        "The ChatGPT account changed during this operation; inspect its state before retrying."
+      );
+    this.auth = auth;
+    signal.throwIfAborted();
+    const headers = new Headers(this.auth.headers);
+    headers.set("Content-Type", "application/json");
+    headers.set("Accept", "application/json, text/event-stream");
+    if (mcp && this.session) headers.set("Mcp-Session-Id", this.session);
+    if (mcp && this.protocol) headers.set("MCP-Protocol-Version", this.protocol);
+    const response = await this.fetchImpl(new URL(path, this.auth.baseUrl), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+      redirect: "error"
+    });
+    if (!response.ok) {
+      const error = await readJSON(response, 64 * 1024, signal).catch(() => ({}));
+      throw responseError(error, response.status);
+    }
+    if (mcp) this.session = response.headers.get("mcp-session-id") ?? this.session;
+    return response;
+  }
+  async rpc(method, params, signal, notify = false) {
+    const id = ++this.id;
+    const response = await this.request(
+      "ps/mcp",
+      {
+        jsonrpc: "2.0",
+        method,
+        ...params === void 0 ? {} : { params },
+        ...notify ? {} : { id }
+      },
+      signal,
+      true
+    );
+    if (notify) {
+      await response.body?.cancel();
+      return;
+    }
+    let reply;
+    if (response.headers.get("content-type")?.includes("text/event-stream")) {
+      for await (const event of readSSE(response, 32 * 1024 * 1024, signal)) {
+        if (isRecord(event.data) && event.data.id === id) {
+          reply = event.data;
+          break;
+        }
+      }
+    } else reply = await readJSON(response, 32 * 1024 * 1024, signal);
+    if (!isRecord(reply) || reply.id !== id) throw new Error(`Missing MCP response for ${method}.`);
+    if (reply.error) throw new Error(`MCP ${method}: ${JSON.stringify(reply.error)}`);
+    if (!("result" in reply)) throw new Error(`Missing MCP result for ${method}.`);
+    return reply.result;
+  }
+  async connect(signal) {
+    const result = await this.rpc(
+      "initialize",
+      {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo
+      },
+      signal
+    );
+    this.protocol = result.protocolVersion;
+    await this.rpc("notifications/initialized", void 0, signal, true);
+  }
+  async listTools(signal) {
+    const tools = [];
+    const cursors = /* @__PURE__ */ new Set();
+    let cursor;
+    do {
+      const result = await this.rpc("tools/list", cursor ? { cursor } : {}, signal);
+      if (!Array.isArray(result.tools)) throw new Error("MCP returned an invalid tools catalog.");
+      tools.push(...result.tools);
+      cursor = result.nextCursor || void 0;
+      if (cursor && cursors.has(cursor)) throw new Error("MCP repeated a tools cursor.");
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return tools;
+  }
+  async call(name, args, signal) {
+    return this.rpc("tools/call", { name, arguments: args }, signal);
+  }
+  async upload(path, signal) {
+    const info = await stat(path);
+    if (!info.isFile()) throw new Error(`Not a file: ${path}`);
+    if (info.size > 10 * 1024 * 1024) throw new Error("Space attachments must be at most 10 MiB.");
+    const bytes = await readFile(path, { signal });
+    if (bytes.length > 10 * 1024 * 1024) throw new Error("Space attachments must be at most 10 MiB.");
+    const create = {
+      file_name: basename(path),
+      file_size: bytes.length,
+      use_case: "codex",
+      codex_connector_id: "connector_openai_pages",
+      codex_action_name: "write_page_reference"
+    };
+    const reservation = await readJSON(await this.request("files", create, signal), 64 * 1024, signal);
+    if (!reservation.file_id || !reservation.upload_url)
+      throw new Error("File reservation lacks its ID or upload URL.");
+    const blob = await this.fetchImpl(reservation.upload_url, {
+      method: "PUT",
+      headers: {
+        "x-ms-blob-type": "BlockBlob",
+        "x-ms-client-request-id": randomUUID(),
+        "Content-Length": String(bytes.length)
+      },
+      body: bytes,
+      signal,
+      redirect: "error"
+    });
+    await blob.body?.cancel();
+    if (!blob.ok)
+      throw new Error(`Attachment byte upload failed (HTTP ${blob.status}); file_id=${reservation.file_id}.`);
+    const until = Date.now() + 3e4;
+    while (true) {
+      const result = await readJSON(
+        await this.request(
+          `files/${encodeURIComponent(reservation.file_id)}/uploaded`,
+          reservation.pdf_c2pa_reservation ? { pdf_c2pa_create_request: create } : {},
+          signal
+        ),
+        64 * 1024,
+        signal
+      );
+      if (result.status === "success" && typeof result.download_url === "string")
+        return {
+          file_id: reservation.file_id,
+          download_url: result.download_url,
+          file_name: result.file_name || basename(path),
+          ...result.mime_type ? { mime_type: result.mime_type } : {}
+        };
+      if (result.status !== "retry" || Date.now() >= until)
+        throw new Error(
+          `Attachment finalization failed; file_id=${reservation.file_id}: ${result.error_message || result.status}`
+        );
+      await delay(250, void 0, { signal });
+    }
+  }
+  async close() {
+    if (!this.session || !this.auth) return;
+    const headers = new Headers(this.auth.headers);
+    headers.set("Mcp-Session-Id", this.session);
+    if (this.protocol) headers.set("MCP-Protocol-Version", this.protocol);
+    const response = await this.fetchImpl(new URL("ps/mcp", this.auth.baseUrl), {
+      method: "DELETE",
+      headers,
+      signal: AbortSignal.timeout(3e3),
+      redirect: "error"
+    }).catch(() => void 0);
+    await response?.body?.cancel();
+    this.session = void 0;
+  }
+};
+
 // packages/core/src/auth.ts
 var EnhanceError = class extends Error {
   constructor(code, message) {
@@ -9035,43 +8782,219 @@ async function requireCredential(resolver, requirement, signal) {
   return result.credential;
 }
 
-// packages/transports/minimax/src/auth.ts
-var ALLOWED_ORIGINS = ["https://api.minimaxi.com", "https://api.minimax.io"];
-var DEFAULT_ORIGIN = "https://api.minimaxi.com";
-function minimaxMediaBase(raw) {
-  const origin = (() => {
-    if (!raw) return DEFAULT_ORIGIN;
-    const url = new URL(raw);
-    if (url.username || url.password || url.search || url.hash)
-      throw new Error("Refusing to use a MiniMax base URL with credentials or fragments.");
-    if (!ALLOWED_ORIGINS.includes(url.origin))
-      throw new Error(`Refusing to send MiniMax credentials to ${url.origin}.`);
-    return url.origin;
-  })();
-  return `${origin}/v1/`;
+// packages/transports/openai/src/auth.ts
+function codexBaseURL(raw = "https://chatgpt.com/backend-api") {
+  const url = new URL(raw);
+  if (url.origin !== "https://chatgpt.com" || url.username || url.password || url.search || url.hash)
+    throw new Error("Refusing to send Codex credentials to an untrusted endpoint.");
+  if (!["/backend-api", "/backend-api/codex", "/backend-api/codex/responses"].includes(
+    url.pathname.replace(/\/+$/, "")
+  ))
+    throw new Error("Unrecognized Codex provider base URL.");
+  return "https://chatgpt.com/backend-api/codex/";
 }
-async function resolveMinimaxAuth(ctx) {
+async function resolveCodexAuth(ctx) {
   const credential = await requireCredential(
     ctx.credentials,
-    { provider: "minimax", channel: "token-plan", acceptedKinds: ["api_key"] },
+    { provider: "openai", channel: "codex", acceptedKinds: ["oauth"] },
     ctx.signal
   );
-  if (!credential.secret.startsWith("sk-cp-") && !credential.secret.startsWith("eyJ"))
-    throw new Error("MiniMax credential does not look like a Token Plan key; reauthenticate in the host.");
+  let accountId = credential.accountId;
+  if (!accountId) {
+    try {
+      const payload = JSON.parse(
+        Buffer.from(credential.secret.split(".")[1] ?? "", "base64url").toString("utf8")
+      );
+      const value = payload?.["https://api.openai.com/auth"]?.chatgpt_account_id;
+      if (typeof value === "string" && value) accountId = value;
+    } catch {
+    }
+  }
+  if (!accountId) throw new Error("Codex credential is missing its account ID; reauthenticate in the host.");
   return {
-    baseUrl: minimaxMediaBase(credential.baseUrl),
-    headers: { Authorization: `Bearer ${credential.secret}`, "User-Agent": userAgent }
+    baseUrl: codexBaseURL(credential.baseUrl),
+    headers: {
+      Authorization: `Bearer ${credential.secret}`,
+      "chatgpt-account-id": accountId,
+      originator: "pi",
+      "User-Agent": userAgent
+    }
+  };
+}
+async function resolveAppsAuth(ctx) {
+  const auth = await resolveCodexAuth(ctx);
+  return {
+    baseUrl: "https://chatgpt.com/backend-api/",
+    headers: { ...auth.headers, originator: "agent-enhance", "X-OpenAI-Product-Sku": "codex" }
   };
 }
 
-// packages/capabilities/gen_image/minimax/src/index.ts
-var index_default = defineModule(definition, requirements, (services) => ({
-  tool: imageTool({
-    artifacts: new ImageArtifactStore(services.artifactRoot),
-    client: (ctx) => new ImageClient(() => resolveMinimaxAuth(ctx)),
-    preview: services.preview
-  })
-}));
+// packages/transports/openai/src/apps-tool.ts
+var schemas = (names) => typebox_exports.Object(
+  {
+    action: typebox_exports.Union([typebox_exports.Literal("list"), typebox_exports.Literal("get"), typebox_exports.Literal("call")], {
+      description: "list operations, get the exact parameter schema, or call an operation."
+    }),
+    tool: typebox_exports.Optional(typebox_exports.Union(names.map((name) => typebox_exports.Literal(name)))),
+    arguments: typebox_exports.Optional(typebox_exports.Record(typebox_exports.String(), typebox_exports.Unknown())),
+    timeout_seconds: typebox_exports.Optional(typebox_exports.Integer({ minimum: 1, maximum: 600, default: 120 }))
+  },
+  { additionalProperties: false }
+);
+var SPACE_OPERATIONS = [
+  "list_spaces",
+  "get_space",
+  "list_pages",
+  "find_pages",
+  "read_page",
+  "create_page",
+  "edit_page",
+  "patch_page",
+  "write_page_reference",
+  "inspect_page_reference",
+  "read_page_reference"
+];
+var SITES_OPERATIONS = [
+  "list_sites",
+  "get_site",
+  "list_site_versions",
+  "get_site_version",
+  "get_deployment_status"
+];
+function appResult(result) {
+  const content = [];
+  for (const part of result.content ?? []) {
+    if (part.type === "text" && typeof part.text === "string")
+      content.push({ type: "text", text: part.text });
+    else if (part.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string")
+      content.push({ type: "image", data: part.data, mimeType: part.mimeType });
+    else if (part.type === "resource_link")
+      content.push({ type: "text", text: `[${part.name || "Resource"}](${part.uri})` });
+    else content.push({ type: "text", text: JSON.stringify(part) });
+  }
+  if (result.structuredContent) {
+    const json = JSON.stringify(result.structuredContent);
+    if (!content.some((c) => c.type === "text" && c.text === json))
+      content.push({ type: "text", text: json });
+  }
+  if (result.isError)
+    content.unshift({
+      type: "text",
+      text: "Tool error. Inspect the returned state before retrying a write."
+    });
+  return {
+    content,
+    details: { remoteResult: result },
+    ...result.structuredContent ? { structuredContent: result.structuredContent } : {},
+    isError: result.isError ?? false
+  };
+}
+function appsTool(kind, deps = {
+  client: (ctx) => new AppsClient(() => resolveAppsAuth(ctx))
+}) {
+  const names = kind === "space" ? SPACE_OPERATIONS : SITES_OPERATIONS;
+  const prefix = kind === "space" ? "chatgpt_space" : "sites";
+  const connectorId = kind === "space" ? "connector_openai_pages" : "connector_20205bf7d4e99a89d7154bb849718324";
+  const schema = schemas(names);
+  return {
+    name: kind,
+    label: kind === "space" ? "Space \u9875\u9762" : "Sites \u67E5\u8BE2",
+    description: kind === "space" ? "Find, read, create and edit ordinary ChatGPT Space pages, and upload local images/files (up to 10 MiB) using existing Codex OAuth. Use action=get and a tool name to read its current parameter schema before calling. Uploads return references; insert the returned Markdown with edit_page. Native spreadsheets/slides/Canvas, schedules and sharing are not included." : "Query ChatGPT Sites, saved versions and deployment status using existing Codex OAuth. Read-only: no creation, deployment or scheduling. Use action=get with a tool name to read its current parameter schema, then action=call with arguments.",
+    promptSnippet: kind === "space" ? "Read and write ChatGPT Space pages and upload attachments" : "Query ChatGPT Sites and deployment status",
+    promptGuidelines: [
+      "Use list to discover available operations; get returns the complete live schema and instructions. Follow returned pagination cursors, including empty pages with a next cursor.",
+      "Copy exact IDs from results. A Space ID is not a Page ID; get_space returns its root_page_id.",
+      ...kind === "space" ? [
+        "Read an existing page before editing; retain its guidance, block IDs and hashes. After a write, read back the affected page to verify.",
+        "For write_page_reference, arguments.file accepts a local path relative to the working directory or an already uploaded file object. Uploading does not insert the image; use the returned reference/Markdown in edit_page.",
+        "Writes are never automatically retried. Reuse idempotency keys when specified by the live schema; inspect remote state after an uncertain outcome."
+      ] : []
+    ],
+    parameters: schema,
+    async execute(_callId, args, signal, _onUpdate, ctx) {
+      if (!value_exports.Check(schema, args))
+        throw new Error(`Invalid ${kind} parameters; use the current tool schema.`);
+      if (args.action === "list" && (args.tool || args.arguments))
+        throw new Error("list does not accept tool or arguments.");
+      if (args.action !== "list" && !args.tool) throw new Error("get and call require tool.");
+      if (args.action !== "call" && args.arguments) throw new Error("Only call accepts arguments.");
+      const deadline = AbortSignal.timeout((args.timeout_seconds ?? 120) * 1e3);
+      const signals = [deadline, signal, ctx.signal].filter((s) => !!s);
+      const abort = AbortSignal.any(signals);
+      abort.throwIfAborted();
+      const client = deps.client({ ...ctx, signal: abort });
+      let uploaded;
+      try {
+        await client.connect(abort);
+        const tools = (await client.listTools(abort)).filter(
+          (t) => t._meta?.connector_id === connectorId && names.some((name) => t.name === `${prefix}.${name}`)
+        );
+        if (args.action === "list")
+          return appResult({
+            structuredContent: {
+              tools: tools.map((t) => ({
+                name: t.name.slice(prefix.length + 1),
+                description: t.description
+              })),
+              ...tools.length ? {} : {
+                guidance: "No supported operations are available for this account. Check the ChatGPT app connection and account access."
+              }
+            }
+          });
+        const tool = tools.find((t) => t.name === `${prefix}.${args.tool}`);
+        if (!tool) throw new Error(`${args.tool} is not available for this account; use action=list.`);
+        if (args.action === "get") {
+          const view = structuredClone(tool);
+          if (args.tool === "write_page_reference")
+            view.inputSchema.properties.file = {
+              anyOf: [
+                {
+                  type: "string",
+                  description: "Local file path; at most 10 MiB. Relative paths resolve from the working directory."
+                },
+                view.inputSchema.properties.file
+              ]
+            };
+          return appResult({ structuredContent: { ...view, name: args.tool } });
+        }
+        const parameters = { ...args.arguments ?? {} };
+        if (args.tool === "write_page_reference" && typeof parameters.file === "string") {
+          if (typeof parameters.page_id !== "string" || !parameters.page_id)
+            throw new Error("write_page_reference requires page_id before uploading.");
+          uploaded = await client.upload(resolve(ctx.cwd, parameters.file), abort);
+          parameters.file = uploaded;
+        }
+        const result = appResult(await client.call(tool.name, parameters, abort));
+        if (uploaded) {
+          result.details.uploadedFile = uploaded;
+          if (result.isError)
+            result.content.push({
+              type: "text",
+              text: `The file was uploaded. Reuse this file object after resolving the attachment error: ${JSON.stringify(uploaded)}`
+            });
+        }
+        return result;
+      } catch (error) {
+        const message = abort.aborted ? "Operation cancelled or timed out." : error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${message} No operation was automatically retried.${uploaded ? ` File already uploaded; reuse arguments.file=${JSON.stringify(uploaded)}.` : ""}${args.action === "call" && kind === "space" ? " Check remote state before repeating a write." : ""}`
+        );
+      } finally {
+        await client.close();
+      }
+    }
+  };
+}
+
+// packages/capabilities/sites/openai/src/index.ts
+var index_default = defineModule(
+  definition,
+  {
+    provider: "openai",
+    auth: { provider: "openai", channel: "codex", acceptedKinds: ["oauth"] }
+  },
+  () => ({ tool: appsTool("sites") })
+);
 export {
   index_default as default
 };

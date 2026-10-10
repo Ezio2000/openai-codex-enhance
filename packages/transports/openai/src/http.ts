@@ -161,7 +161,7 @@ export async function* readSSE(
   if (final) yield final;
 }
 
-async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
   let abort: () => void = () => {};
   const cancelled = new Promise<never>((_resolve, reject) => {

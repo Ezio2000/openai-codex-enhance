@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "release": "0.3.1",
+  "release": "0.4.0",
   "modules": [
     {
       "provider": "minimax",
@@ -120,6 +120,40 @@
       "bytes": 400186,
       "label": "联网搜索",
       "group": "Search"
+    },
+    {
+      "provider": "openai",
+      "auth": {
+        "provider": "openai",
+        "channel": "codex",
+        "acceptedKinds": [
+          "oauth"
+        ]
+      },
+      "apiVersion": 2,
+      "id": "sites/openai",
+      "capability": "sites",
+      "file": "sites--openai.mjs",
+      "bytes": 398635,
+      "label": "Sites 查询",
+      "group": "Content"
+    },
+    {
+      "provider": "openai",
+      "auth": {
+        "provider": "openai",
+        "channel": "codex",
+        "acceptedKinds": [
+          "oauth"
+        ]
+      },
+      "apiVersion": 2,
+      "id": "space/openai",
+      "capability": "space",
+      "file": "space--openai.mjs",
+      "bytes": 398635,
+      "label": "Space 页面",
+      "group": "Content"
     },
     {
       "provider": "openai",

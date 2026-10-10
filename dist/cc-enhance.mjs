@@ -28217,7 +28217,7 @@ function orderSchema(schema) {
 // packages/hosts/claude-code/src/server.ts
 var SUPPORTED_REQUIREMENTS = /* @__PURE__ */ new Set(["approval", "task-settled"]);
 var MANAGE_ACTIONS = ["status", "reset", "ask", "auto", "revoke"];
-var SERIAL_TOOLS = /* @__PURE__ */ new Set(["use_computer"]);
+var SERIAL_TOOLS = /* @__PURE__ */ new Set(["use_computer", "space"]);
 var errorText = (error2) => error2 instanceof Error ? error2.message : String(error2);
 var alive = (pid) => {
   try {
@@ -28238,6 +28238,8 @@ function removeStaleSockets() {
 }
 function toMcp(result) {
   return {
+    ...result.structuredContent ? { structuredContent: result.structuredContent } : {},
+    ...result.isError !== void 0 ? { isError: result.isError } : {},
     content: result.content.map(
       (part) => part.type === "image" ? { type: "image", data: part.data, mimeType: part.mimeType } : { type: "text", text: part.text }
     )
@@ -28280,7 +28282,7 @@ async function serve(options) {
       inputSchema: orderSchema(JSON.parse(JSON.stringify(tool.parameters))),
       annotations: {
         title: toolTitle(tool.name, providers(tool.name), tool.label),
-        ...SERIAL_TOOLS.has(tool.name) ? {} : { readOnlyHint: true }
+        readOnlyHint: !SERIAL_TOOLS.has(tool.name)
       }
     })),
     ...computer() ? [

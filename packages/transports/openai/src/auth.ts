@@ -46,3 +46,13 @@ export async function resolveCodexAuth(
     },
   };
 }
+
+export async function resolveAppsAuth(
+  ctx: Pick<ExecutionContext, "credentials" | "signal">,
+): Promise<ProtocolAuth> {
+  const auth = await resolveCodexAuth(ctx);
+  return {
+    baseUrl: "https://chatgpt.com/backend-api/",
+    headers: { ...auth.headers, originator: "agent-enhance", "X-OpenAI-Product-Sku": "codex" },
+  };
+}

@@ -15,6 +15,8 @@ export type Content =
 export interface ToolResult<D = Record<string, unknown>> {
   content: Content[];
   details: D;
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
 }
 export interface HistoryMessage {
   role: string;

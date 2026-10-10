@@ -174,6 +174,8 @@ test("Claude Code exposes discovered providers once and descriptions fit its MCP
     );
     const tools = (await client.listTools()).tools;
     const image = tools.filter((t) => t.name === "gen_image");
+    assert.equal(tools.find((t) => t.name === "space")?.annotations?.readOnlyHint, false);
+    assert.equal(tools.find((t) => t.name === "sites")?.annotations?.readOnlyHint, true);
     assert.equal(image.length, 1);
     assert.deepEqual((image[0]!.inputSchema.properties!.provider as any).enum, ["minimax", "openai", "xai"]);
     for (const tool of tools)

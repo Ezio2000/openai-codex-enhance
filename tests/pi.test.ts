@@ -302,6 +302,8 @@ test("Pi discovers credentials automatically, merges providers and updates after
     h.services("openai-codex", "xai");
     await h.command("refresh");
     assert.ok(h.active().includes("gen_image"));
+    assert.ok(h.active().includes("space"));
+    assert.ok(h.active().includes("sites"));
     assert.equal([...h.tools.values()].filter((t) => t.name === "gen_image").length, 1);
     assert.deepEqual(h.tools.get("gen_image").parameters.properties.provider.enum, ["openai", "xai"]);
     assert.deepEqual(h.tools.get("gen_image").parameters.properties.service.enum, [
@@ -312,6 +314,8 @@ test("Pi discovers credentials automatically, merges providers and updates after
     assert.deepEqual(await readdir(home), [], "discovery does not persist derived state");
     h.services("xai");
     await h.command("refresh");
+    assert.ok(!h.active().includes("space"));
+    assert.ok(!h.active().includes("sites"));
     assert.deepEqual(h.tools.get("gen_image").parameters.properties.provider.enum, ["xai"]);
     h.services();
     await h.command("refresh");

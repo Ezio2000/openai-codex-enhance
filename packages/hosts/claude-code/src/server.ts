@@ -24,7 +24,7 @@ import { orderSchema, toolTitle } from "./display.ts";
 export const SUPPORTED_REQUIREMENTS = new Set(["approval", "task-settled"]);
 const MANAGE_ACTIONS = ["status", "reset", "ask", "auto", "revoke"];
 // Claude Code runs an MCP tool concurrently only when it declares readOnlyHint; use_computer drives one shared desktop.
-const SERIAL_TOOLS = new Set(["use_computer"]);
+const SERIAL_TOOLS = new Set(["use_computer", "space"]);
 export interface ServeOptions {
   home: string;
   catalog: Catalog;
@@ -52,6 +52,8 @@ function removeStaleSockets(): void {
 }
 function toMcp(result: ToolResult<any>): CallToolResult {
   return {
+    ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
+    ...(result.isError !== undefined ? { isError: result.isError } : {}),
     content: result.content.map((part) =>
       part.type === "image"
         ? { type: "image", data: part.data, mimeType: part.mimeType }
@@ -103,7 +105,7 @@ export async function serve(options: ServeOptions): Promise<void> {
       inputSchema: orderSchema(JSON.parse(JSON.stringify(tool.parameters))),
       annotations: {
         title: toolTitle(tool.name, providers(tool.name), tool.label),
-        ...(SERIAL_TOOLS.has(tool.name) ? {} : { readOnlyHint: true }),
+        readOnlyHint: !SERIAL_TOOLS.has(tool.name),
       },
     })),
     ...(computer()

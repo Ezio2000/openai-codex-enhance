@@ -135,7 +135,7 @@ var HTTPTransport = class {
 // package.json
 var package_default = {
   name: "pi-enhance",
-  version: "0.3.1",
+  version: "0.4.0",
   description: "Host-neutral capabilities with automatic service discovery for Pi and Claude Code",
   type: "module",
   license: "MIT",

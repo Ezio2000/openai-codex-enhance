@@ -1,0 +1,6 @@
+{
+  "name": "@agent-enhance/sites-openai",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts"
+}
