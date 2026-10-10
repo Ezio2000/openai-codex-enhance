@@ -134,7 +134,7 @@
       "id": "sites/openai",
       "capability": "sites",
       "file": "sites--openai.mjs",
-      "bytes": 398635,
+      "bytes": 398720,
       "label": "Sites 查询",
       "group": "Content"
     },
@@ -151,7 +151,7 @@
       "id": "space/openai",
       "capability": "space",
       "file": "space--openai.mjs",
-      "bytes": 398635,
+      "bytes": 398720,
       "label": "Space 页面",
       "group": "Content"
     },

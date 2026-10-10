@@ -201,7 +201,8 @@ try {
       title: "Read-only installation smoke test",
       timeout_seconds: 60,
     });
-    await session.extensionRunner.emit({ type: "agent_settled" });
+    const settled = { type: "agent_settled" as const, aborted: false };
+    await session.extensionRunner.emit(settled);
     await session.prompt("/pi-enhance openai use_computer status");
     const last = session.messages.at(-1) as any;
     const status = JSON.parse(last.content);

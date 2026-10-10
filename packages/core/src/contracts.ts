@@ -12,10 +12,11 @@ export interface ModelInfo {
 }
 export type Content =
   { type: "text"; text: string } | { type: "image"; data: string; mimeType: string; text?: never };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export interface ToolResult<D = Record<string, unknown>> {
   content: Content[];
   details: D;
-  structuredContent?: Record<string, unknown>;
+  structuredContent?: Record<string, JsonValue>;
   isError?: boolean;
 }
 export interface HistoryMessage {

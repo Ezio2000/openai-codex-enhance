@@ -41,6 +41,9 @@ export const SITES_OPERATIONS = [
 
 export function appResult(result: AppResult): ToolResult {
   const content: Content[] = [];
+  const structuredContent: ToolResult["structuredContent"] = result.structuredContent
+    ? JSON.parse(JSON.stringify(result.structuredContent))
+    : undefined;
   for (const part of result.content ?? []) {
     if (part.type === "text" && typeof part.text === "string")
       content.push({ type: "text", text: part.text });
@@ -63,7 +66,7 @@ export function appResult(result: AppResult): ToolResult {
   return {
     content,
     details: { remoteResult: result },
-    ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
+    ...(structuredContent ? { structuredContent } : {}),
     isError: result.isError ?? false,
   };
 }

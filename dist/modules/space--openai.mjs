@@ -8863,6 +8863,7 @@ var SITES_OPERATIONS = [
 ];
 function appResult(result) {
   const content = [];
+  const structuredContent = result.structuredContent ? JSON.parse(JSON.stringify(result.structuredContent)) : void 0;
   for (const part of result.content ?? []) {
     if (part.type === "text" && typeof part.text === "string")
       content.push({ type: "text", text: part.text });
@@ -8885,7 +8886,7 @@ function appResult(result) {
   return {
     content,
     details: { remoteResult: result },
-    ...result.structuredContent ? { structuredContent: result.structuredContent } : {},
+    ...structuredContent ? { structuredContent } : {},
     isError: result.isError ?? false
   };
 }
