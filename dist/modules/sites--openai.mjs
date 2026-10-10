@@ -8529,7 +8529,7 @@ async function abortable(promise, signal) {
 // package.json
 var package_default = {
   name: "pi-enhance",
-  version: "0.4.0",
+  version: "0.4.1",
   description: "Host-neutral capabilities with automatic service discovery for Pi and Claude Code",
   type: "module",
   license: "MIT",

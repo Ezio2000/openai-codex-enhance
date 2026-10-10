@@ -27331,7 +27331,15 @@ var ServiceRuntime = class {
         }
       }
       const registry2 = this.options.registry;
-      registry2.setPreferred(preferences.preferred);
+      const preferred = { ...preferences.preferred };
+      for (const capability of ["space", "sites"]) {
+        if (preferred[capability]) continue;
+        const service = ["codex:openai-codex", "pi:openai-codex"].find(
+          (id) => wanted.has(`${capability}/openai@${id}`)
+        );
+        if (service) preferred[capability] = service;
+      }
+      registry2.setPreferred(preferred);
       for (const loaded of registry2.list()) {
         if (wanted.has(loaded.id)) {
           registry2.resume(loaded.id);

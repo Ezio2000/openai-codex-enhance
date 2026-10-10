@@ -20,6 +20,8 @@ import { watchServiceSources } from "../packages/integrations/services/src/watch
 import { CapabilityRegistry } from "../packages/core/src/registry.ts";
 import { StaticCredentialResolver } from "../packages/core/src/auth.ts";
 import image from "../packages/capabilities/gen_image/xai/src/index.ts";
+import space from "../packages/capabilities/space/openai/src/index.ts";
+import sites from "../packages/capabilities/sites/openai/src/index.ts";
 import type { CapabilityModule } from "../packages/core/src/contracts.ts";
 
 async function sandbox() {
@@ -163,12 +165,12 @@ test("malformed sources are reported independently; platform API keys do not bec
   }
 });
 
-function runtimeFixture(run = async () => ({ content: [], details: {} })) {
+function runtimeFixture(run = async () => ({ content: [], details: {} }), base = image) {
   const module: CapabilityModule = {
-    ...image,
+    ...base,
     create: (services) => ({
-      ...image.create(services),
-      tool: { ...image.create(services).tool!, execute: run },
+      ...base.create(services),
+      tool: { ...base.create(services).tool!, execute: run },
     }),
   };
   const catalog: Catalog = {
@@ -177,7 +179,7 @@ function runtimeFixture(run = async () => ({ content: [], details: {} })) {
     modules: [
       {
         ...module.manifest,
-        file: "gen_image--xai.mjs",
+        file: `${module.manifest.capability}--${module.manifest.provider}.mjs`,
         bytes: 1,
         label: module.definition.label,
         group: module.definition.group,
@@ -218,6 +220,59 @@ function runtimeFixture(run = async () => ({ content: [], details: {} })) {
       failed = true;
     },
   };
+}
+
+for (const module of [space, sites]) {
+  test(`${module.manifest.capability} defaults to native Codex OAuth and respects explicit selection and exclusions`, async () => {
+    const f = runtimeFixture(undefined, module);
+    const capability = module.manifest.capability;
+    const connections = ["pi:openai-codex", "codex:openai-codex"].map((id) => ({
+      ...f.connection,
+      id,
+      provider: "openai" as const,
+      channel: "codex",
+    }));
+    const preferences = emptyPreferences();
+    const conditions = { features: new Set<string>() };
+    const context = {
+      cwd: "/unused",
+      sessionId: "test",
+      host: "test",
+      credentials: new StaticCredentialResolver({}),
+    };
+    const call = (args = {}) =>
+      f.registry.tools()[0]!.execute("test", { action: "list", ...args }, undefined, undefined, context);
+    try {
+      f.setConnections(connections);
+      await f.runtime.synchronize([f.source], preferences, conditions);
+      assert.equal((await call()).details.service, "codex:openai-codex");
+      assert.equal((await call({ service: "pi:openai-codex" })).details.service, "pi:openai-codex");
+      assert.deepEqual(preferences.preferred, {});
+      await f.runtime.synchronize(
+        [f.source],
+        { ...preferences, preferred: { [capability]: "pi:openai-codex" } },
+        conditions,
+      );
+      assert.equal((await call()).details.service, "pi:openai-codex");
+      await f.runtime.synchronize(
+        [f.source],
+        { ...preferences, excluded: [`${capability}@codex:openai-codex`] },
+        conditions,
+      );
+      assert.equal((await call()).details.service, "pi:openai-codex");
+      f.setConnections([connections[0]!]);
+      await f.runtime.synchronize([f.source], preferences, conditions);
+      assert.equal((await call()).details.service, "pi:openai-codex");
+      await f.runtime.synchronize(
+        [f.source],
+        { ...preferences, preferred: { [capability]: "codex:openai-codex" } },
+        conditions,
+      );
+      await assert.rejects(call(), /PROVIDER_SELECTION/);
+    } finally {
+      await f.runtime.dispose();
+    }
+  });
 }
 
 test("runtime derives tools from services, treats failed discovery as unknown, and removes logged-out connections", async () => {

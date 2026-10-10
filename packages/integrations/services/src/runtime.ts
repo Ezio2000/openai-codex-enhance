@@ -94,7 +94,16 @@ export class ServiceRuntime {
           }
         }
         const registry = this.options.registry;
-        registry.setPreferred(preferences.preferred);
+        const preferred = { ...preferences.preferred };
+        // ChatGPT apps share Codex OAuth. Prefer its native source when both hosts are signed in.
+        for (const capability of ["space", "sites"]) {
+          if (preferred[capability]) continue;
+          const service = ["codex:openai-codex", "pi:openai-codex"].find((id) =>
+            wanted.has(`${capability}/openai@${id}`),
+          );
+          if (service) preferred[capability] = service;
+        }
+        registry.setPreferred(preferred);
         for (const loaded of registry.list()) {
           if (wanted.has(loaded.id)) {
             registry.resume(loaded.id);

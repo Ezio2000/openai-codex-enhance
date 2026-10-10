@@ -66,6 +66,8 @@ Claude Code 将前缀换为 `/cc-enhance`。`services` 列出连接；`status` �
 
 只有一个符合请求的连接时自动选择；多个连接时由 Agent 在参数中选择 `provider` 或精确 `service`，也可以保存偏好。同一供应商有多个连接时，仅指定 `provider` 仍不足以选择账号。显式连接不可用时直接报错，失败不会自动换连接重发。
 
+`space` 和 `sites` 未保存偏好时，默认选择 OpenAI Codex OAuth：优先 `codex:openai-codex`，该连接未发现或已排除时使用 `pi:openai-codex`。显式 `service` 和保存的偏好优先；`prefer space auto` / `prefer sites auto` 恢复这一默认规则。调用失败不会切换连接重试。
+
 排除项可针对整个能力或一个能力的特定连接。排除立即阻止新调用，已有调用完成后释放实例。Pi 原生工具排除规则仍然有效。`view_image` 在主模型已经支持图片时隐藏；Claude Code 无法取得主模型信息，因此保持提供。
 
 ## 工具

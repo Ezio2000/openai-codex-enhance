@@ -24,6 +24,8 @@ Unwanted bindings are suspended immediately, so existing tool handles cannot sta
 
 Preferences are host-scoped under `preferences/<host>.json`. Only preferred service IDs and exclusions are shared fields. Pi owns request settings and subagent settings. Atomic writes and locks protect concurrent writers. No project-level configuration is read.
 
+The service runtime supplies built-in OpenAI connection preferences for `space` and `sites` when no preference is saved: native `codex:openai-codex` first, then `pi:openai-codex` if the native connection is absent or excluded. Explicit selections and saved preferences retain priority. This selection policy runs before execution and never retries a failed call on another connection.
+
 ## Core and parameter composition
 
 Core owns module contracts, schema validation, explicit binding selection and lifecycle. It knows nothing about credential files, environment discovery or automatic activation. A binding provides its stable ID, label and resolver. Each call captures the selected resolver; refreshing bindings does not redirect an in-flight call.
